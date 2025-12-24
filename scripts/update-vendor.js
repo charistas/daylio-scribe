@@ -7,7 +7,7 @@ const fs = require('fs');
 const path = require('path');
 const { execSync } = require('child_process');
 
-const vendorDir = path.join(__dirname, '..', 'daylio-scribe', 'vendor');
+const vendorDir = path.join(__dirname, '..', 'vendor');
 const rootDir = path.join(__dirname, '..');
 
 const filesToCopy = [
@@ -47,7 +47,7 @@ filesToCopy.forEach(({ src, dest }) => {
 console.log('\nBundling emoji-picker-element...');
 try {
     execSync(
-        `npx esbuild node_modules/emoji-picker-element/index.js --bundle --format=iife --global-name=EmojiPicker --outfile=daylio-scribe/vendor/emoji-picker-element.bundle.js`,
+        `npx esbuild node_modules/emoji-picker-element/index.js --bundle --format=iife --global-name=EmojiPicker --outfile=vendor/emoji-picker-element.bundle.js`,
         { cwd: rootDir, stdio: 'inherit' }
     );
     console.log('✓ Bundled emoji-picker-element → vendor/emoji-picker-element.bundle.js');

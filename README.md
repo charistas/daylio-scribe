@@ -21,7 +21,7 @@ A local web app for editing Daylio journal notes with a human-friendly interface
 ## How to Use
 
 1. Export a backup from the Daylio app
-2. Open `daylio-scribe/index.html` in your browser
+2. Open `index.html` in your browser (or visit the [live app](https://charistas.github.io/daylio-scribe/))
 3. Drag and drop your `.daylio` file onto the page
 4. Browse and edit your notes
 5. Click "Download Backup"

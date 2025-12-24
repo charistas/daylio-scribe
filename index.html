@@ -49,6 +49,22 @@
                     <div class="search-box">
                         <input type="text" id="searchInput" placeholder="Search notes...">
                     </div>
+                    <div class="date-filter">
+                        <select id="dateRangeSelect">
+                            <option value="all">All Time</option>
+                            <option value="thisMonth">This Month</option>
+                            <option value="last30">Last 30 Days</option>
+                            <option value="last3Months">Last 3 Months</option>
+                            <option value="thisYear">This Year</option>
+                            <option value="lastYear">Last Year</option>
+                            <option value="custom">Custom Range...</option>
+                        </select>
+                        <div id="customDateRange" class="custom-date-range hidden">
+                            <input type="date" id="dateFrom" title="From date">
+                            <span>to</span>
+                            <input type="date" id="dateTo" title="To date">
+                        </div>
+                    </div>
                     <div id="entriesList" class="entries-list"></div>
                 </div>
 

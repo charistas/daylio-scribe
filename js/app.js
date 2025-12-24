@@ -46,6 +46,10 @@ class DaylioScribe {
         this.backupVersion = document.getElementById('backupVersion');
         this.filterNotes = document.getElementById('filterNotes');
         this.searchInput = document.getElementById('searchInput');
+        this.dateRangeSelect = document.getElementById('dateRangeSelect');
+        this.customDateRange = document.getElementById('customDateRange');
+        this.dateFrom = document.getElementById('dateFrom');
+        this.dateTo = document.getElementById('dateTo');
         this.entriesList = document.getElementById('entriesList');
         this.saveBtn = document.getElementById('saveBtn');
 
@@ -200,6 +204,18 @@ class DaylioScribe {
         this.filterNotes.addEventListener('change', () => this.applyFilters());
         this.searchInput.addEventListener('input', () => this.applyFilters());
         this.saveBtn.addEventListener('click', () => this.saveBackup());
+
+        // Date range filter
+        this.dateRangeSelect.addEventListener('change', () => {
+            if (this.dateRangeSelect.value === 'custom') {
+                this.customDateRange.classList.remove('hidden');
+            } else {
+                this.customDateRange.classList.add('hidden');
+                this.applyFilters();
+            }
+        });
+        this.dateFrom.addEventListener('change', () => this.applyFilters());
+        this.dateTo.addEventListener('change', () => this.applyFilters());
 
         // Editor - auto-save on title change
         this.noteTitleInput.addEventListener('input', () => this.updateCurrentEntry());
@@ -365,6 +381,15 @@ class DaylioScribe {
             filtered = filtered.filter(e => e.note && e.note.length > 0);
         }
 
+        // Filter by date range
+        const dateRange = this.getDateRange();
+        if (dateRange) {
+            filtered = filtered.filter(e => {
+                const entryDate = e.datetime;
+                return entryDate >= dateRange.from && entryDate <= dateRange.to;
+            });
+        }
+
         // Search
         const searchTerm = this.searchInput.value.toLowerCase().trim();
         if (searchTerm) {
@@ -380,6 +405,59 @@ class DaylioScribe {
 
         this.filteredEntries = filtered;
         this.renderEntries();
+    }
+
+    /**
+     * Get the date range based on the selected filter
+     * Returns { from, to } timestamps or null for "all time"
+     */
+    getDateRange() {
+        const selection = this.dateRangeSelect.value;
+        const now = new Date();
+        let from, to;
+
+        switch (selection) {
+            case 'all':
+                return null;
+
+            case 'thisMonth':
+                from = new Date(now.getFullYear(), now.getMonth(), 1);
+                to = new Date(now.getFullYear(), now.getMonth() + 1, 0, 23, 59, 59, 999);
+                break;
+
+            case 'last30':
+                from = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000);
+                to = now;
+                break;
+
+            case 'last3Months':
+                from = new Date(now.getFullYear(), now.getMonth() - 2, 1);
+                to = now;
+                break;
+
+            case 'thisYear':
+                from = new Date(now.getFullYear(), 0, 1);
+                to = new Date(now.getFullYear(), 11, 31, 23, 59, 59, 999);
+                break;
+
+            case 'lastYear':
+                from = new Date(now.getFullYear() - 1, 0, 1);
+                to = new Date(now.getFullYear() - 1, 11, 31, 23, 59, 59, 999);
+                break;
+
+            case 'custom':
+                const fromVal = this.dateFrom.value;
+                const toVal = this.dateTo.value;
+                if (!fromVal && !toVal) return null;
+                from = fromVal ? new Date(fromVal) : new Date(0);
+                to = toVal ? new Date(toVal + 'T23:59:59.999') : now;
+                break;
+
+            default:
+                return null;
+        }
+
+        return { from: from.getTime(), to: to.getTime() };
     }
 
     renderEntries() {

@@ -245,6 +245,55 @@ header h1 {
     border-color: var(--accent);
 }
 
+/* Date Filter */
+.date-filter {
+    padding: 10px 15px;
+    border-bottom: 1px solid var(--border);
+}
+
+.date-filter select {
+    width: 100%;
+    padding: 8px 12px;
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    background: var(--bg-primary);
+    color: var(--text-primary);
+    font-size: 0.85rem;
+    cursor: pointer;
+}
+
+.date-filter select:focus {
+    outline: none;
+    border-color: var(--accent);
+}
+
+.custom-date-range {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin-top: 10px;
+}
+
+.custom-date-range span {
+    color: var(--text-secondary);
+    font-size: 0.85rem;
+}
+
+.custom-date-range input[type="date"] {
+    flex: 1;
+    padding: 6px 10px;
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    background: var(--bg-primary);
+    color: var(--text-primary);
+    font-size: 0.85rem;
+}
+
+.custom-date-range input[type="date"]:focus {
+    outline: none;
+    border-color: var(--accent);
+}
+
 .entries-list {
     flex: 1;
     overflow-y: auto;

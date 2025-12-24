@@ -5,8 +5,10 @@
 
 const fs = require('fs');
 const path = require('path');
+const { execSync } = require('child_process');
 
 const vendorDir = path.join(__dirname, '..', 'daylio-scribe', 'vendor');
+const rootDir = path.join(__dirname, '..');
 
 const filesToCopy = [
     {
@@ -20,18 +22,6 @@ const filesToCopy = [
     {
         src: 'node_modules/quill/dist/quill.snow.css',
         dest: 'quill.snow.css'
-    },
-    {
-        src: 'node_modules/emoji-picker-element/index.js',
-        dest: 'emoji-picker-element.js'
-    },
-    {
-        src: 'node_modules/emoji-picker-element/picker.js',
-        dest: 'picker.js'
-    },
-    {
-        src: 'node_modules/emoji-picker-element/database.js',
-        dest: 'database.js'
     }
 ];
 
@@ -42,7 +32,7 @@ if (!fs.existsSync(vendorDir)) {
 
 // Copy files
 filesToCopy.forEach(({ src, dest }) => {
-    const srcPath = path.join(__dirname, '..', src);
+    const srcPath = path.join(rootDir, src);
     const destPath = path.join(vendorDir, dest);
 
     if (fs.existsSync(srcPath)) {
@@ -52,5 +42,17 @@ filesToCopy.forEach(({ src, dest }) => {
         console.error(`✗ Source not found: ${src}`);
     }
 });
+
+// Bundle emoji-picker-element (ES module needs bundling for file:// protocol)
+console.log('\nBundling emoji-picker-element...');
+try {
+    execSync(
+        `npx esbuild node_modules/emoji-picker-element/index.js --bundle --format=iife --global-name=EmojiPicker --outfile=daylio-scribe/vendor/emoji-picker-element.bundle.js`,
+        { cwd: rootDir, stdio: 'inherit' }
+    );
+    console.log('✓ Bundled emoji-picker-element → vendor/emoji-picker-element.bundle.js');
+} catch (error) {
+    console.error('✗ Failed to bundle emoji-picker-element:', error.message);
+}
 
 console.log('\nVendor files updated successfully!');

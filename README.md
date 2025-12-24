@@ -12,7 +12,7 @@ daylio-analysis/
 │   ├── js/app.js           # Core application logic
 │   └── vendor/             # Bundled libraries (offline support)
 ├── scripts/                # Build/update scripts
-│   └── update-vendor.js    # Copies libs from node_modules to vendor
+│   └── update-vendor.js    # Copies/bundles libs from node_modules to vendor
 ├── backups/                # Your backup files (gitignored)
 ├── package.json            # Dependencies for Dependabot
 ├── DAYLIO_BACKUP_GUIDE.md  # How to unpack/repack backups
@@ -41,7 +41,7 @@ Single-page app with bundled dependencies (works offline):
 **Libraries:**
 - JSZip (3.10.1) - ZIP file handling
 - Quill (2.0.3) - WYSIWYG editor
-- emoji-picker-element (1.21.0) - Emoji picker
+- emoji-picker-element (1.21.0) - Emoji picker (bundled with esbuild for file:// compatibility)
 
 - **UI**: Entry list (left panel) + editor (right panel)
 - **State**: `DaylioScribe` class manages loaded data and current selection

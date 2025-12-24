@@ -4,11 +4,14 @@
   "description": "A human-friendly editor for Daylio backup notes",
   "private": true,
   "dependencies": {
+    "emoji-picker-element": "^1.21.0",
     "jszip": "3.10.1",
-    "quill": "2.0.3",
-    "emoji-picker-element": "^1.21.0"
+    "quill": "2.0.3"
   },
   "scripts": {
     "update-vendor": "node scripts/update-vendor.js"
+  },
+  "devDependencies": {
+    "esbuild": "^0.27.2"
   }
 }

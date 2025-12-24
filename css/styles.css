@@ -446,6 +446,13 @@ header h1 {
     text-overflow: ellipsis;
 }
 
+.entry-preview mark {
+    background: var(--accent);
+    color: white;
+    padding: 0 2px;
+    border-radius: 2px;
+}
+
 .entry-no-note {
     color: var(--text-secondary);
     font-style: italic;

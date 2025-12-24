@@ -687,6 +687,9 @@ class DaylioScribe {
     renderEntries() {
         this.entriesList.innerHTML = '';
 
+        // Get current search term for highlighting
+        const searchTerm = this.searchInput.value.trim();
+
         this.filteredEntries.forEach((entry, index) => {
             const originalIndex = this.entries.indexOf(entry);
             const div = document.createElement('div');
@@ -698,7 +701,7 @@ class DaylioScribe {
             }
 
             const date = this.formatDate(entry);
-            const preview = this.getPreview(entry);
+            const preview = this.getPreview(entry, searchTerm);
             const moodGroupId = this.getMoodGroupId(entry.mood);
             const moodClass = `mood-${moodGroupId}`;
             const moodLabel = this.getMoodLabel(entry.mood);
@@ -728,17 +731,56 @@ class DaylioScribe {
         return `${months[entry.month]} ${entry.day}, ${entry.year}`;
     }
 
-    getPreview(entry) {
-        // Show title if it exists
-        if (entry.note_title && entry.note_title.trim()) {
-            return entry.note_title.trim();
+    getPreview(entry, searchTerm = '') {
+        const hasNote = entry.note && entry.note.length > 0;
+        const hasTitle = entry.note_title && entry.note_title.trim();
+
+        // No content at all
+        if (!hasTitle && !hasNote) {
+            return this.escapeHtml('No note');
         }
-        // Fall back to note preview
-        if (!entry.note || entry.note.length === 0) {
-            return 'No note';
+
+        // If searching, try to show matching snippet from note content
+        if (searchTerm && hasNote) {
+            const plain = this.htmlToPlainText(entry.note);
+            const lowerPlain = plain.toLowerCase();
+            const lowerTerm = searchTerm.toLowerCase();
+            const matchIndex = lowerPlain.indexOf(lowerTerm);
+
+            if (matchIndex !== -1) {
+                // Extract snippet around the match
+                const snippetLength = 60;
+                const termLength = searchTerm.length;
+
+                // Center the match in the snippet
+                let start = Math.max(0, matchIndex - Math.floor((snippetLength - termLength) / 2));
+                let end = Math.min(plain.length, start + snippetLength);
+
+                // Adjust start if we hit the end
+                if (end === plain.length) {
+                    start = Math.max(0, end - snippetLength);
+                }
+
+                let snippet = plain.substring(start, end);
+
+                // Add ellipsis if truncated
+                if (start > 0) snippet = '...' + snippet;
+                if (end < plain.length) snippet = snippet + '...';
+
+                return this.highlightText(snippet, searchTerm);
+            }
         }
-        const plain = this.htmlToPlainText(entry.note);
-        return plain.length > 60 ? plain.substring(0, 60) + '...' : plain;
+
+        // Default behavior: show title if exists, otherwise note preview
+        let text;
+        if (hasTitle) {
+            text = entry.note_title.trim();
+        } else {
+            const plain = this.htmlToPlainText(entry.note);
+            text = plain.length > 60 ? plain.substring(0, 60) + '...' : plain;
+        }
+
+        return this.highlightText(text, searchTerm);
     }
 
     selectEntry(index) {
@@ -1152,6 +1194,32 @@ class DaylioScribe {
         text = text.trim();
 
         return text;
+    }
+
+    /**
+     * Escape HTML special characters to prevent XSS
+     */
+    escapeHtml(text) {
+        const div = document.createElement('div');
+        div.textContent = text;
+        return div.innerHTML;
+    }
+
+    /**
+     * Highlight search term in text (case-insensitive)
+     * Returns HTML with <mark> tags around matches
+     */
+    highlightText(text, searchTerm) {
+        if (!searchTerm || !text) return this.escapeHtml(text);
+
+        const escaped = this.escapeHtml(text);
+        const escapedTerm = this.escapeHtml(searchTerm);
+
+        // Create case-insensitive regex, escaping regex special chars
+        const regexSafe = escapedTerm.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+        const regex = new RegExp(`(${regexSafe})`, 'gi');
+
+        return escaped.replace(regex, '<mark>$1</mark>');
     }
 
     /**

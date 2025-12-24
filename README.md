@@ -9,13 +9,12 @@ daylio-analysis/
 ├── daylio-scribe/          # Web app for editing notes
 │   ├── index.html          # Main app UI
 │   ├── css/styles.css      # Dark theme styling
-│   └── js/app.js           # Core application logic
+│   ├── js/app.js           # Core application logic
+│   └── vendor/             # Bundled libraries (offline support)
+├── scripts/                # Build/update scripts
+│   └── update-vendor.js    # Copies libs from node_modules to vendor
 ├── backups/                # Your backup files (gitignored)
-│   ├── extracted/          # Unpacked backup contents
-│   │   ├── backup.daylio           # Base64-encoded JSON
-│   │   ├── backup_decoded.json     # Decoded, editable JSON
-│   │   └── assets/photos/          # Photo attachments
-│   └── *.daylio            # Backup packages
+├── package.json            # Dependencies for Dependabot
 ├── DAYLIO_BACKUP_GUIDE.md  # How to unpack/repack backups
 └── README.md               # This file
 ```
@@ -37,7 +36,12 @@ A local web app for editing Daylio journal notes with a human-friendly interface
 
 ### Architecture
 
-Single-page app with one dependency (JSZip for ZIP handling):
+Single-page app with bundled dependencies (works offline):
+
+**Libraries:**
+- JSZip (3.10.1) - ZIP file handling
+- Quill (2.0.3) - WYSIWYG editor
+- emoji-picker-element (1.21.0) - Emoji picker
 
 - **UI**: Entry list (left panel) + editor (right panel)
 - **State**: `DaylioScribe` class manages loaded data and current selection
@@ -98,3 +102,20 @@ Key fields in `backup_decoded.json`:
 | `tags` | array | Tag definitions |
 | `tag_groups` | array | Tag categories |
 | `customMoods` | array | Mood level definitions |
+
+## Updating Dependencies
+
+Libraries are bundled locally in `daylio-scribe/vendor/` for offline use and security. To check for updates:
+
+```bash
+# Check for outdated packages
+npm outdated
+
+# Update packages
+npm update
+
+# Copy updated files to vendor folder
+npm run update-vendor
+```
+
+GitHub Dependabot will automatically create PRs for security updates.

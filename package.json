@@ -1,0 +1,14 @@
+{
+  "name": "daylio-scribe",
+  "version": "1.0.0",
+  "description": "A human-friendly editor for Daylio backup notes",
+  "private": true,
+  "dependencies": {
+    "jszip": "3.10.1",
+    "quill": "2.0.3",
+    "emoji-picker-element": "^1.21.0"
+  },
+  "scripts": {
+    "update-vendor": "node scripts/update-vendor.js"
+  }
+}

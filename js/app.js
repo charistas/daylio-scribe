@@ -2,6 +2,9 @@
  * Daylio Scribe - A human-friendly editor for Daylio backup notes
  */
 
+// Highest Daylio backup version tested with this app
+const SUPPORTED_VERSION = 19;
+
 class DaylioScribe {
     constructor() {
         this.data = null;
@@ -39,6 +42,7 @@ class DaylioScribe {
         this.app = document.getElementById('app');
         this.entryCount = document.getElementById('entryCount');
         this.notesCount = document.getElementById('notesCount');
+        this.backupVersion = document.getElementById('backupVersion');
         this.filterNotes = document.getElementById('filterNotes');
         this.searchInput = document.getElementById('searchInput');
         this.entriesList = document.getElementById('entriesList');
@@ -232,6 +236,13 @@ class DaylioScribe {
             const base64Content = await backupFile.async('string');
             const jsonString = this.base64DecodeUtf8(base64Content.trim());
             this.data = JSON.parse(jsonString);
+
+            // Check backup version compatibility
+            if (!this.checkVersion()) {
+                this.dropzone.querySelector('p').textContent = 'Drop your .daylio backup file here';
+                return;
+            }
+
             this.entries = this.data.dayEntries || [];
 
             // Build mood labels from customMoods
@@ -242,6 +253,35 @@ class DaylioScribe {
             alert('Error loading backup: ' + err.message);
             this.dropzone.querySelector('p').textContent = 'Drop your .daylio backup file here';
         }
+    }
+
+    /**
+     * Check if the backup version is compatible with this app
+     * Returns true if safe to proceed, false if user cancelled
+     */
+    checkVersion() {
+        const backupVersion = this.data.version;
+
+        if (backupVersion === undefined) {
+            // Very old backup without version field - proceed with caution
+            console.warn('Backup has no version field - proceeding anyway');
+            return true;
+        }
+
+        if (backupVersion > SUPPORTED_VERSION) {
+            const proceed = confirm(
+                `Warning: This backup is from a newer Daylio version (v${backupVersion}).\n\n` +
+                `This app was tested with version ${SUPPORTED_VERSION}.\n\n` +
+                `The backup structure may have changed. Editing could cause data loss or corruption.\n\n` +
+                `Do you want to continue anyway?`
+            );
+            if (!proceed) {
+                return false;
+            }
+            console.warn(`Proceeding with unsupported backup version ${backupVersion} (supported: ${SUPPORTED_VERSION})`);
+        }
+
+        return true;
     }
 
     /**
@@ -287,6 +327,22 @@ class DaylioScribe {
         const withNotes = this.entries.filter(e => e.note && e.note.length > 0).length;
         this.entryCount.textContent = `${this.entries.length} entries`;
         this.notesCount.textContent = `${withNotes} with notes`;
+
+        // Display backup version with warning indicator if unsupported
+        const version = this.data.version;
+        if (version !== undefined) {
+            this.backupVersion.textContent = `v${version}`;
+            if (version > SUPPORTED_VERSION) {
+                this.backupVersion.classList.add('version-warning');
+                this.backupVersion.dataset.tooltip = `Unsupported version (tested up to v${SUPPORTED_VERSION})`;
+            } else {
+                this.backupVersion.classList.remove('version-warning');
+                this.backupVersion.dataset.tooltip = 'Backup format version';
+            }
+        } else {
+            this.backupVersion.textContent = 'v?';
+            this.backupVersion.dataset.tooltip = 'Unknown version';
+        }
 
         this.applyFilters();
     }

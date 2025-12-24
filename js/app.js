@@ -16,6 +16,10 @@ class DaylioScribe {
         this.isUpdating = false;  // Prevent recursive updates
         this.hasUnsavedChanges = false;  // Track if entries have been modified
 
+        // Calendar state
+        this.calendarDate = new Date();  // Currently displayed month
+        this.selectedCalendarDate = null;  // Selected day (for filtering)
+
         // Default mood labels (fallback when custom_name is empty)
         this.defaultMoodLabels = {
             1: 'great',
@@ -51,6 +55,13 @@ class DaylioScribe {
         this.dateFrom = document.getElementById('dateFrom');
         this.dateTo = document.getElementById('dateTo');
         this.entriesList = document.getElementById('entriesList');
+
+        // Mini calendar
+        this.miniCalendar = document.getElementById('miniCalendar');
+        this.calendarTitle = document.getElementById('calendarTitle');
+        this.calendarGrid = document.getElementById('calendarGrid');
+        this.prevMonthBtn = document.getElementById('prevMonth');
+        this.nextMonthBtn = document.getElementById('nextMonth');
         this.saveBtn = document.getElementById('saveBtn');
 
         // Editor
@@ -201,7 +212,10 @@ class DaylioScribe {
         });
 
         // Toolbar
-        this.filterNotes.addEventListener('change', () => this.applyFilters());
+        this.filterNotes.addEventListener('change', () => {
+            this.renderCalendar();  // Update calendar to reflect filter
+            this.applyFilters();
+        });
         this.searchInput.addEventListener('input', () => this.applyFilters());
         this.saveBtn.addEventListener('click', () => this.saveBackup());
 
@@ -216,6 +230,16 @@ class DaylioScribe {
         });
         this.dateFrom.addEventListener('change', () => this.applyFilters());
         this.dateTo.addEventListener('change', () => this.applyFilters());
+
+        // Mini calendar navigation
+        this.prevMonthBtn.addEventListener('click', () => {
+            this.calendarDate.setMonth(this.calendarDate.getMonth() - 1);
+            this.renderCalendar();
+        });
+        this.nextMonthBtn.addEventListener('click', () => {
+            this.calendarDate.setMonth(this.calendarDate.getMonth() + 1);
+            this.renderCalendar();
+        });
 
         // Editor - auto-save on title change
         this.noteTitleInput.addEventListener('input', () => this.updateCurrentEntry());
@@ -370,6 +394,10 @@ class DaylioScribe {
             this.backupVersion.dataset.tooltip = 'Unknown version';
         }
 
+        // Show and render mini calendar
+        this.miniCalendar.classList.add('visible');
+        this.renderCalendar();
+
         this.applyFilters();
     }
 
@@ -449,7 +477,8 @@ class DaylioScribe {
                 const fromVal = this.dateFrom.value;
                 const toVal = this.dateTo.value;
                 if (!fromVal && !toVal) return null;
-                from = fromVal ? new Date(fromVal) : new Date(0);
+                // Parse as local time, not UTC
+                from = fromVal ? new Date(fromVal + 'T00:00:00') : new Date(0);
                 to = toVal ? new Date(toVal + 'T23:59:59.999') : now;
                 break;
 
@@ -458,6 +487,159 @@ class DaylioScribe {
         }
 
         return { from: from.getTime(), to: to.getTime() };
+    }
+
+    /**
+     * Render the mini calendar for the current month
+     */
+    renderCalendar() {
+        const year = this.calendarDate.getFullYear();
+        const month = this.calendarDate.getMonth();
+
+        // Update title
+        const monthNames = ['January', 'February', 'March', 'April', 'May', 'June',
+                           'July', 'August', 'September', 'October', 'November', 'December'];
+        this.calendarTitle.textContent = `${monthNames[month]} ${year}`;
+
+        // Build entries map for quick lookup
+        const entriesMap = this.buildEntriesMap();
+
+        // Get first day of month and total days
+        const firstDay = new Date(year, month, 1);
+        const lastDay = new Date(year, month + 1, 0);
+        const totalDays = lastDay.getDate();
+
+        // Get starting day (0 = Monday in our grid)
+        let startDay = firstDay.getDay() - 1;
+        if (startDay < 0) startDay = 6;  // Sunday becomes 6
+
+        // Get today for highlighting
+        const today = new Date();
+        const isCurrentMonth = today.getFullYear() === year && today.getMonth() === month;
+
+        // Build calendar grid
+        this.calendarGrid.innerHTML = '';
+
+        // Add empty cells for days before month starts
+        for (let i = 0; i < startDay; i++) {
+            const prevMonthDay = new Date(year, month, -startDay + i + 1);
+            this.calendarGrid.appendChild(this.createDayCell(prevMonthDay, entriesMap, true));
+        }
+
+        // Add days of the month
+        for (let day = 1; day <= totalDays; day++) {
+            const date = new Date(year, month, day);
+            const isToday = isCurrentMonth && day === today.getDate();
+            this.calendarGrid.appendChild(this.createDayCell(date, entriesMap, false, isToday));
+        }
+
+        // Add empty cells for days after month ends (fill to 6 rows)
+        const cellsUsed = startDay + totalDays;
+        const cellsNeeded = Math.ceil(cellsUsed / 7) * 7;
+        for (let i = 0; i < cellsNeeded - cellsUsed; i++) {
+            const nextMonthDay = new Date(year, month + 1, i + 1);
+            this.calendarGrid.appendChild(this.createDayCell(nextMonthDay, entriesMap, true));
+        }
+    }
+
+    /**
+     * Create a calendar day cell element
+     */
+    createDayCell(date, entriesMap, isOtherMonth, isToday = false) {
+        const cell = document.createElement('div');
+        cell.className = 'calendar-day';
+        cell.textContent = date.getDate();
+
+        if (isOtherMonth) {
+            cell.classList.add('other-month');
+        }
+
+        if (isToday) {
+            cell.classList.add('today');
+        }
+
+        // Check if this date is selected
+        if (this.selectedCalendarDate) {
+            const selDate = this.selectedCalendarDate;
+            if (date.getFullYear() === selDate.getFullYear() &&
+                date.getMonth() === selDate.getMonth() &&
+                date.getDate() === selDate.getDate()) {
+                cell.classList.add('selected');
+            }
+        }
+
+        // Check for entries on this day
+        const dateKey = `${date.getFullYear()}-${date.getMonth()}-${date.getDate()}`;
+        const dayEntries = entriesMap[dateKey];
+        if (dayEntries && dayEntries.length > 0) {
+            cell.classList.add('has-entry');
+            // Use the mood color of the first entry
+            const moodGroupId = this.getMoodGroupId(dayEntries[0].mood);
+            const moodColors = {
+                1: '#4ecca3',  // great
+                2: '#7ed957',  // good
+                3: '#ffd93d',  // meh
+                4: '#ff8c42',  // bad
+                5: '#e94560'   // awful
+            };
+            cell.style.setProperty('--mood-color', moodColors[moodGroupId] || '#a0a0a0');
+        }
+
+        // Click handler
+        cell.addEventListener('click', () => this.handleCalendarDayClick(date));
+
+        return cell;
+    }
+
+    /**
+     * Build a map of date -> entries for quick lookup
+     * Respects the "notes only" filter
+     */
+    buildEntriesMap() {
+        const map = {};
+        const notesOnly = this.filterNotes.checked;
+
+        for (const entry of this.entries) {
+            // Skip entries without notes if filter is enabled
+            if (notesOnly && (!entry.note || entry.note.length === 0)) {
+                continue;
+            }
+
+            const date = new Date(entry.datetime);
+            const key = `${date.getFullYear()}-${date.getMonth()}-${date.getDate()}`;
+            if (!map[key]) map[key] = [];
+            map[key].push(entry);
+        }
+        return map;
+    }
+
+    /**
+     * Handle click on a calendar day
+     */
+    handleCalendarDayClick(date) {
+        // Toggle selection
+        if (this.selectedCalendarDate &&
+            date.getFullYear() === this.selectedCalendarDate.getFullYear() &&
+            date.getMonth() === this.selectedCalendarDate.getMonth() &&
+            date.getDate() === this.selectedCalendarDate.getDate()) {
+            // Clicking same day - deselect
+            this.selectedCalendarDate = null;
+            this.dateRangeSelect.value = 'all';
+            this.customDateRange.classList.add('hidden');
+        } else {
+            // Select this day
+            this.selectedCalendarDate = date;
+            this.dateRangeSelect.value = 'custom';
+            this.customDateRange.classList.remove('hidden');
+
+            // Set the date inputs (format locally, not UTC)
+            const dateStr = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`;
+            this.dateFrom.value = dateStr;
+            this.dateTo.value = dateStr;
+        }
+
+        this.renderCalendar();
+        this.applyFilters();
     }
 
     renderEntries() {

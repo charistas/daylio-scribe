@@ -13,6 +13,8 @@ A local web app for editing Daylio journal notes with a human-friendly interface
   - Emoji picker
 - Resizable note editor
 - Search and filter entries
+- Mini calendar for quick date navigation
+- Date range filter (presets + custom range)
 - Download ready-to-import `.daylio` backup with one click
 - Full UTF-8 support (Greek, emoji, etc.)
 - Works offline (all dependencies bundled locally)

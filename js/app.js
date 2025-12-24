@@ -424,8 +424,14 @@ class DaylioScribe {
         // Remove inline styles from p tags but keep the tag
         result = result.replace(/<p[^>]*>/gi, '<p>');
 
-        // Remove inline styles from li tags but keep the tag
-        result = result.replace(/<li[^>]*>/gi, '<li>');
+        // Remove inline styles from li tags but preserve data-list attribute for Quill
+        result = result.replace(/<li([^>]*)>/gi, (match, attrs) => {
+            const dataListMatch = attrs.match(/data-list="([^"]*)"/);
+            if (dataListMatch) {
+                return `<li data-list="${dataListMatch[1]}">`;
+            }
+            return '<li>';
+        });
 
         // Convert <div><br></div> patterns to <p><br></p> for Quill
         result = result.replace(/<div><br\s*\/?><\/div>/gi, '<p><br></p>');
@@ -491,9 +497,6 @@ class DaylioScribe {
         // Handle bullet lists properly with a more robust approach
         result = this.convertQuillLists(result);
 
-        // Remove data-list attributes from remaining list items
-        result = result.replace(/<li data-list="[^"]*">/gi, '<li>');
-
         // Convert <strong> to <b>
         result = result.replace(/<strong>/gi, '<b>');
         result = result.replace(/<\/strong>/gi, '</b>');
@@ -544,9 +547,9 @@ class DaylioScribe {
                     });
                     ol.parentNode.replaceChild(ul, ol);
                 } else {
-                    // Keep as ol, just clean attributes
+                    // Keep as ol with data-list="ordered" for Quill compatibility
                     items.forEach(li => {
-                        li.removeAttribute('data-list');
+                        li.setAttribute('data-list', 'ordered');
                     });
                 }
             }

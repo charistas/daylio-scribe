@@ -26,15 +26,18 @@ A local web app for editing Daylio journal notes with a human-friendly interface
 
 ### Features
 
-- Load `backup_decoded.json` via drag-and-drop
+- Load `.daylio` backup files directly via drag-and-drop
+- Automatic extraction, decoding, and repackaging (no manual steps)
 - Browse entries sorted by date with mood indicators
 - Edit notes using normal text (Enter for newlines)
 - Search and filter entries
-- Export modified JSON for repackaging
+- Download ready-to-import `.daylio` backup with one click
+- Full UTF-8 support (Greek, emoji, etc.)
+- Preserves all photo assets
 
 ### Architecture
 
-Single-page app with no dependencies:
+Single-page app with one dependency (JSZip for ZIP handling):
 
 - **UI**: Entry list (left panel) + editor (right panel)
 - **State**: `DaylioScribe` class manages loaded data and current selection
@@ -67,16 +70,18 @@ The core challenge is bidirectional HTML↔plaintext conversion:
 
 ## Workflow
 
-1. Export backup from Daylio app
-2. Unpack: `unzip backup.daylio -d extracted/`
-3. Decode: `base64 -D -i extracted/backup.daylio -o extracted/backup_decoded.json`
-4. Format: `jq '.' backup_decoded.json > temp.json && mv temp.json backup_decoded.json`
-5. Edit using Daylio Scribe (open `daylio-scribe/index.html`)
-6. Encode: `base64 -i backup_decoded.json -o backup.daylio`
-7. Repack: `zip -r -0 ../modified.daylio backup.daylio assets/`
-8. Import into Daylio app
+### Using Daylio Scribe (Recommended)
 
-See `DAYLIO_BACKUP_GUIDE.md` for detailed commands.
+1. Export backup from Daylio app
+2. Open `daylio-scribe/index.html` in a browser
+3. Drag and drop your `.daylio` file
+4. Edit your notes
+5. Click "Download Backup"
+6. Import the downloaded file into Daylio
+
+### Manual CLI Workflow
+
+For advanced users or scripting, see `DAYLIO_BACKUP_GUIDE.md` for manual unpack/repack commands.
 
 ## JSON Structure
 

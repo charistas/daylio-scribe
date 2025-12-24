@@ -10,6 +10,10 @@ class DaylioScribe {
         this.currentEntryIndex = null;
         this.moodLabels = ['', 'great', 'good', 'meh', 'bad', 'awful'];
 
+        // Store the original ZIP contents for repackaging
+        this.originalZip = null;
+        this.assets = {};  // Store asset files from the ZIP
+
         this.initElements();
         this.bindEvents();
     }
@@ -61,30 +65,52 @@ class DaylioScribe {
         // Toolbar
         this.filterNotes.addEventListener('change', () => this.applyFilters());
         this.searchInput.addEventListener('input', () => this.applyFilters());
-        this.saveBtn.addEventListener('click', () => this.saveJSON());
+        this.saveBtn.addEventListener('click', () => this.saveBackup());
 
         // Editor - auto-save on change
         this.noteTitleInput.addEventListener('input', () => this.updateCurrentEntry());
         this.noteInput.addEventListener('input', () => this.updateCurrentEntry());
     }
 
-    handleFile(file) {
-        if (!file || !file.name.endsWith('.json')) {
-            alert('Please select a valid JSON file');
+    async handleFile(file) {
+        if (!file || !file.name.endsWith('.daylio')) {
+            alert('Please select a valid .daylio backup file');
             return;
         }
 
-        const reader = new FileReader();
-        reader.onload = (e) => {
-            try {
-                this.data = JSON.parse(e.target.result);
-                this.entries = this.data.dayEntries || [];
-                this.showApp();
-            } catch (err) {
-                alert('Error parsing JSON: ' + err.message);
+        try {
+            // Show loading state
+            this.dropzone.querySelector('p').textContent = 'Loading...';
+
+            // Load the ZIP file
+            this.originalZip = await JSZip.loadAsync(file);
+
+            // Extract and store assets
+            this.assets = {};
+            const assetFiles = Object.keys(this.originalZip.files).filter(
+                name => name.startsWith('assets/') && !this.originalZip.files[name].dir
+            );
+
+            for (const assetPath of assetFiles) {
+                this.assets[assetPath] = await this.originalZip.files[assetPath].async('uint8array');
             }
-        };
-        reader.readAsText(file);
+
+            // Extract and decode the backup.daylio file (base64 encoded JSON)
+            const backupFile = this.originalZip.file('backup.daylio');
+            if (!backupFile) {
+                throw new Error('backup.daylio not found in the archive');
+            }
+
+            const base64Content = await backupFile.async('string');
+            const jsonString = this.base64DecodeUtf8(base64Content.trim());
+            this.data = JSON.parse(jsonString);
+            this.entries = this.data.dayEntries || [];
+
+            this.showApp();
+        } catch (err) {
+            alert('Error loading backup: ' + err.message);
+            this.dropzone.querySelector('p').textContent = 'Drop your .daylio backup file here';
+        }
     }
 
     showApp() {
@@ -262,23 +288,80 @@ class DaylioScribe {
         return html;
     }
 
-    saveJSON() {
+    /**
+     * Decode base64 to UTF-8 string
+     */
+    base64DecodeUtf8(base64) {
+        const binaryString = atob(base64);
+        const bytes = new Uint8Array(binaryString.length);
+        for (let i = 0; i < binaryString.length; i++) {
+            bytes[i] = binaryString.charCodeAt(i);
+        }
+        return new TextDecoder('utf-8').decode(bytes);
+    }
+
+    /**
+     * Encode UTF-8 string to base64
+     */
+    base64EncodeUtf8(str) {
+        const bytes = new TextEncoder().encode(str);
+        let binaryString = '';
+        for (let i = 0; i < bytes.length; i++) {
+            binaryString += String.fromCharCode(bytes[i]);
+        }
+        return btoa(binaryString);
+    }
+
+    /**
+     * Save the modified backup as a .daylio file
+     */
+    async saveBackup() {
         if (!this.data) return;
 
-        // Update the entries in data
-        this.data.dayEntries = this.entries;
+        try {
+            // Update the entries in data
+            this.data.dayEntries = this.entries;
 
-        // Create and download file
-        const blob = new Blob([JSON.stringify(this.data, null, 2)], { type: 'application/json' });
-        const url = URL.createObjectURL(blob);
+            // Convert JSON to string (compact, no pretty printing)
+            const jsonString = JSON.stringify(this.data);
 
-        const a = document.createElement('a');
-        a.href = url;
-        a.download = 'backup_decoded.json';
-        document.body.appendChild(a);
-        a.click();
-        document.body.removeChild(a);
-        URL.revokeObjectURL(url);
+            // Encode to base64 (with proper UTF-8 handling)
+            const base64Content = this.base64EncodeUtf8(jsonString);
+
+            // Create new ZIP
+            const zip = new JSZip();
+
+            // Add the encoded backup.daylio
+            zip.file('backup.daylio', base64Content);
+
+            // Add all assets
+            for (const [path, content] of Object.entries(this.assets)) {
+                zip.file(path, content);
+            }
+
+            // Generate the ZIP file with no compression (store only, like original)
+            const blob = await zip.generateAsync({
+                type: 'blob',
+                compression: 'STORE'
+            });
+
+            // Download the file
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+
+            // Generate filename with current date
+            const now = new Date();
+            const dateStr = `${now.getFullYear()}_${String(now.getMonth() + 1).padStart(2, '0')}_${String(now.getDate()).padStart(2, '0')}`;
+            a.download = `backup_${dateStr}.daylio`;
+
+            document.body.appendChild(a);
+            a.click();
+            document.body.removeChild(a);
+            URL.revokeObjectURL(url);
+        } catch (err) {
+            alert('Error saving backup: ' + err.message);
+        }
     }
 }
 

@@ -465,7 +465,38 @@ class DaylioScribe {
         // Clean up empty paragraphs at the start
         result = result.replace(/^(<p><br><\/p>)+/, '');
 
+        // Add data-list attributes for Quill list recognition
+        result = this.addQuillListAttributes(result);
+
         return result;
+    }
+
+    /**
+     * Add data-list attributes to list items for Quill compatibility
+     * Quill requires data-list="ordered" or data-list="bullet" on <li> elements
+     */
+    addQuillListAttributes(html) {
+        if (!html) return html;
+
+        const parser = new DOMParser();
+        const doc = parser.parseFromString('<div>' + html + '</div>', 'text/html');
+        const container = doc.body.firstChild;
+
+        // Add data-list="ordered" to li elements inside ol tags
+        container.querySelectorAll('ol > li').forEach(li => {
+            if (!li.getAttribute('data-list')) {
+                li.setAttribute('data-list', 'ordered');
+            }
+        });
+
+        // Add data-list="bullet" to li elements inside ul tags
+        container.querySelectorAll('ul > li').forEach(li => {
+            if (!li.getAttribute('data-list')) {
+                li.setAttribute('data-list', 'bullet');
+            }
+        });
+
+        return container.innerHTML;
     }
 
     /**

@@ -351,7 +351,8 @@ class DaylioScribe {
     formatDate(entry) {
         const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun',
                        'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
-        return `${months[entry.month - 1]} ${entry.day}, ${entry.year}`;
+        // Daylio uses 0-indexed months (0 = January)
+        return `${months[entry.month]} ${entry.day}, ${entry.year}`;
     }
 
     getPreview(entry) {

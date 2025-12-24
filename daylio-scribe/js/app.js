@@ -335,12 +335,13 @@ class DaylioScribe {
             const moodClass = `mood-${moodGroupId}`;
             const moodLabel = this.getMoodLabel(entry.mood);
 
+            const hasContent = entry.note_title?.trim() || entry.note;
             div.innerHTML = `
                 <div class="entry-header">
                     <span class="entry-date">${date}</span>
                     <span class="mood-badge ${moodClass}">${moodLabel}</span>
                 </div>
-                <div class="${entry.note ? 'entry-preview' : 'entry-no-note'}">${preview}</div>
+                <div class="${hasContent ? 'entry-preview' : 'entry-no-note'}">${preview}</div>
             `;
 
             div.addEventListener('click', () => this.selectEntry(originalIndex));
@@ -356,6 +357,11 @@ class DaylioScribe {
     }
 
     getPreview(entry) {
+        // Show title if it exists
+        if (entry.note_title && entry.note_title.trim()) {
+            return entry.note_title.trim();
+        }
+        // Fall back to note preview
         if (!entry.note || entry.note.length === 0) {
             return 'No note';
         }

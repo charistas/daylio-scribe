@@ -35,6 +35,3 @@ The app reads mood definitions from your backup:
 - Supports any number of mood levels
 - Color-coded mood badges for quick reference
 
-## Advanced Usage
-
-For manual CLI commands to unpack/repack backups, see [DAYLIO_BACKUP_GUIDE.md](DAYLIO_BACKUP_GUIDE.md).

@@ -301,6 +301,15 @@ header h1 {
     opacity: 0.3;
 }
 
+.calendar-day.future {
+    opacity: 0.3;
+    cursor: default;
+}
+
+.calendar-day.future:hover {
+    background: transparent;
+}
+
 .calendar-day.today {
     border: 1px solid var(--accent);
 }

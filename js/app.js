@@ -598,6 +598,18 @@ class DaylioScribe {
             }
         }
 
+        // Check if date is in the future
+        const today = new Date();
+        today.setHours(0, 0, 0, 0);
+        const cellDate = new Date(date);
+        cellDate.setHours(0, 0, 0, 0);
+        const isFuture = cellDate > today;
+
+        if (isFuture) {
+            cell.classList.add('future');
+            return cell;
+        }
+
         // Check for entries on this day
         const dateKey = `${date.getFullYear()}-${date.getMonth()}-${date.getDate()}`;
         const dayEntries = entriesMap[dateKey];

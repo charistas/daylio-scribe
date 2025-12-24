@@ -435,6 +435,52 @@ header h1 {
     background: var(--text-secondary);
 }
 
+/* Emoji Picker */
+.emoji-picker-popup {
+    position: fixed;
+    z-index: 1000;
+    box-shadow: 0 4px 20px rgba(0, 0, 0, 0.4);
+    border-radius: 8px;
+    overflow: hidden;
+}
+
+.emoji-picker-popup.hidden {
+    display: none;
+}
+
+/* Dark theme for emoji-picker-element */
+emoji-picker {
+    --background: var(--bg-secondary);
+    --border-color: var(--border);
+    --indicator-color: var(--accent);
+    --input-border-color: var(--border);
+    --input-font-color: var(--text-primary);
+    --input-placeholder-color: var(--text-secondary);
+    --outline-color: var(--accent);
+    --category-font-color: var(--text-secondary);
+    --button-active-background: var(--bg-tertiary);
+    --button-hover-background: var(--bg-tertiary);
+    --secondary-text-color: var(--text-secondary);
+    --emoji-padding: 0.4rem;
+    --num-columns: 8;
+    height: 350px;
+}
+
+/* Emoji button in toolbar */
+.ql-emoji {
+    width: 28px !important;
+    height: 24px !important;
+    padding: 0 !important;
+    display: flex !important;
+    align-items: center !important;
+    justify-content: center !important;
+    font-size: 16px !important;
+}
+
+.ql-emoji::before {
+    content: '😊';
+}
+
 /* Responsive */
 @media (max-width: 900px) {
     .main-content {

@@ -58,10 +58,16 @@ class DaylioScribe {
             theme: 'snow',
             placeholder: 'Write your note here...',
             modules: {
-                toolbar: [
-                    ['bold', 'italic', 'underline', 'strike'],
-                    [{ 'list': 'ordered'}, { 'list': 'bullet' }]
-                ],
+                toolbar: {
+                    container: [
+                        ['bold', 'italic', 'underline', 'strike'],
+                        [{ 'list': 'ordered'}, { 'list': 'bullet' }],
+                        ['emoji']
+                    ],
+                    handlers: {
+                        'emoji': () => this.toggleEmojiPicker()
+                    }
+                },
                 keyboard: {
                     bindings: {
                         // Ensure standard shortcuts work
@@ -97,6 +103,71 @@ class DaylioScribe {
                 this.updateCurrentEntry();
             }
         });
+
+        // Initialize emoji picker
+        this.initEmojiPicker();
+    }
+
+    initEmojiPicker() {
+        this.emojiPickerPopup = document.getElementById('emojiPickerPopup');
+        this.emojiPicker = document.querySelector('emoji-picker');
+
+        // Handle emoji selection
+        this.emojiPicker.addEventListener('emoji-click', (event) => {
+            const emoji = event.detail.unicode;
+            this.insertEmoji(emoji);
+            this.hideEmojiPicker();
+        });
+
+        // Close picker when clicking outside
+        document.addEventListener('click', (event) => {
+            if (!this.emojiPickerPopup.classList.contains('hidden')) {
+                const isClickInside = this.emojiPickerPopup.contains(event.target) ||
+                                     event.target.closest('.ql-emoji');
+                if (!isClickInside) {
+                    this.hideEmojiPicker();
+                }
+            }
+        });
+    }
+
+    toggleEmojiPicker() {
+        if (this.emojiPickerPopup.classList.contains('hidden')) {
+            this.showEmojiPicker();
+        } else {
+            this.hideEmojiPicker();
+        }
+    }
+
+    showEmojiPicker() {
+        // Position the picker near the emoji button
+        const emojiButton = document.querySelector('.ql-emoji');
+        const rect = emojiButton.getBoundingClientRect();
+
+        this.emojiPickerPopup.style.top = (rect.bottom + 5) + 'px';
+        this.emojiPickerPopup.style.left = rect.left + 'px';
+
+        // Make sure it doesn't go off screen
+        const pickerWidth = 350;
+        if (rect.left + pickerWidth > window.innerWidth) {
+            this.emojiPickerPopup.style.left = (window.innerWidth - pickerWidth - 10) + 'px';
+        }
+
+        this.emojiPickerPopup.classList.remove('hidden');
+
+        // Store current selection for later insertion
+        this.savedSelection = this.quill.getSelection();
+    }
+
+    hideEmojiPicker() {
+        this.emojiPickerPopup.classList.add('hidden');
+    }
+
+    insertEmoji(emoji) {
+        // Restore selection or insert at end
+        const range = this.savedSelection || { index: this.quill.getLength() - 1 };
+        this.quill.insertText(range.index, emoji, 'user');
+        this.quill.setSelection(range.index + emoji.length);
     }
 
     bindEvents() {

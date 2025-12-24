@@ -207,6 +207,16 @@ header h1 {
     background: #3db890;
 }
 
+.btn-secondary {
+    background: var(--bg-tertiary);
+    color: var(--text-primary);
+    border: 1px solid var(--border);
+}
+
+.btn-secondary:hover {
+    background: var(--border);
+}
+
 /* Main Content */
 .main-content {
     display: grid;

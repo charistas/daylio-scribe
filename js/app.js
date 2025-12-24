@@ -67,6 +67,7 @@ class DaylioScribe {
         this.prevMonthBtn = document.getElementById('prevMonth');
         this.nextMonthBtn = document.getElementById('nextMonth');
         this.saveBtn = document.getElementById('saveBtn');
+        this.exportCsvBtn = document.getElementById('exportCsvBtn');
 
         // Editor
         this.editorPlaceholder = document.getElementById('editorPlaceholder');
@@ -233,6 +234,7 @@ class DaylioScribe {
         });
         this.searchInput.addEventListener('input', () => this.applyFilters());
         this.saveBtn.addEventListener('click', () => this.saveBackup());
+        this.exportCsvBtn.addEventListener('click', () => this.exportCsv());
 
         // Date range filter
         this.dateRangeSelect.addEventListener('change', () => {
@@ -1299,6 +1301,96 @@ class DaylioScribe {
         } catch (err) {
             alert('Error saving backup: ' + err.message);
         }
+    }
+
+    /**
+     * Export entries as CSV file
+     */
+    exportCsv() {
+        try {
+            if (!this.entries || this.entries.length === 0) {
+                alert('No entries to export');
+                return;
+            }
+
+        // CSV header
+        const headers = ['Date', 'Weekday', 'Time', 'Mood', 'Title', 'Note'];
+        const rows = [headers];
+
+        // Weekday names
+        const weekdays = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
+
+        // Sort entries by date (oldest first for CSV)
+        const sortedEntries = [...this.entries].sort((a, b) => {
+            const dateA = new Date(a.year, a.month, a.day, a.hour, a.minute);
+            const dateB = new Date(b.year, b.month, b.day, b.hour, b.minute);
+            return dateA - dateB;
+        });
+
+        for (const entry of sortedEntries) {
+            // Format date as YYYY-MM-DD
+            const date = `${entry.year}-${String(entry.month + 1).padStart(2, '0')}-${String(entry.day).padStart(2, '0')}`;
+
+            // Get weekday
+            const weekday = weekdays[new Date(entry.year, entry.month, entry.day).getDay()];
+
+            // Format time
+            const time = `${String(entry.hour).padStart(2, '0')}:${String(entry.minute).padStart(2, '0')}`;
+
+            // Get mood label
+            const mood = this.getMoodLabel(entry.mood);
+
+            // Get title (or empty)
+            const title = entry.note_title || '';
+
+            // Get note as plain text
+            const note = this.htmlToPlainText(entry.note || '');
+
+            rows.push([date, weekday, time, mood, title, note]);
+        }
+
+        // Convert to CSV string
+        const csv = rows.map(row =>
+            row.map(cell => this.escapeCsvField(cell)).join(',')
+        ).join('\n');
+
+        // Add BOM for Excel UTF-8 compatibility
+        const bom = '\uFEFF';
+        const blob = new Blob([bom + csv], { type: 'text/csv;charset=utf-8' });
+
+        // Download
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+
+        const now = new Date();
+        const dateStr = `${now.getFullYear()}_${String(now.getMonth() + 1).padStart(2, '0')}_${String(now.getDate()).padStart(2, '0')}`;
+        a.download = `daylio_export_${dateStr}.csv`;
+
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+        URL.revokeObjectURL(url);
+        } catch (err) {
+            alert('Error exporting CSV: ' + err.message);
+            console.error('CSV export error:', err);
+        }
+    }
+
+    /**
+     * Escape a field for CSV (handle quotes, commas, newlines)
+     */
+    escapeCsvField(field) {
+        if (field === null || field === undefined) return '';
+
+        const str = String(field);
+
+        // If contains comma, quote, or newline, wrap in quotes and escape quotes
+        if (str.includes(',') || str.includes('"') || str.includes('\n') || str.includes('\r')) {
+            return '"' + str.replace(/"/g, '""') + '"';
+        }
+
+        return str;
     }
 }
 

@@ -341,15 +341,17 @@ header h1 {
 
 /* Quill Editor Styling */
 #noteEditor {
-    flex: 1;
     display: flex;
     flex-direction: column;
     min-height: 200px;
 }
 
-.ql-container {
-    flex: 1;
-    overflow-y: auto;
+#noteEditor.ql-container {
+    height: 250px;
+    min-height: 100px;
+    max-height: 70vh;
+    resize: vertical;
+    overflow: auto;
     border: 1px solid var(--border) !important;
     border-top: none !important;
     border-radius: 0 0 6px 6px !important;

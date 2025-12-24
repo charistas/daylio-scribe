@@ -18,7 +18,7 @@ A local web app for editing Daylio journal notes with a human-friendly interface
 - Download ready-to-import `.daylio` backup with one click
 - Full UTF-8 support (Greek, emoji, etc.)
 - Works offline (all dependencies bundled locally)
-- Preserves all photo assets
+- View photo attachments with thumbnail gallery and fullscreen lightbox
 
 ## How to Use
 

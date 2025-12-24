@@ -99,6 +99,10 @@
                         <div class="editor-footer">
                             <span class="hint">Use the toolbar or shortcuts: Ctrl/Cmd+B (bold), Ctrl/Cmd+I (italic), Ctrl/Cmd+U (underline)</span>
                         </div>
+                        <div id="photoSection" class="photo-section hidden">
+                            <label>Photos (<span id="photoCount">0</span>)</label>
+                            <div id="photoThumbnails" class="photo-thumbnails"></div>
+                        </div>
                     </div>
                 </div>
             </div>
@@ -108,6 +112,18 @@
     <!-- Emoji picker popup -->
     <div id="emojiPickerPopup" class="emoji-picker-popup hidden">
         <emoji-picker></emoji-picker>
+    </div>
+
+    <!-- Photo lightbox -->
+    <div id="photoLightbox" class="photo-lightbox hidden">
+        <div class="lightbox-overlay"></div>
+        <div class="lightbox-content">
+            <button class="lightbox-close" id="lightboxClose">&times;</button>
+            <button class="lightbox-nav lightbox-prev" id="lightboxPrev">&#10094;</button>
+            <img id="lightboxImage" src="" alt="Photo">
+            <button class="lightbox-nav lightbox-next" id="lightboxNext">&#10095;</button>
+            <div class="lightbox-counter" id="lightboxCounter">1 / 1</div>
+        </div>
     </div>
 
     <script src="vendor/jszip.min.js"></script>

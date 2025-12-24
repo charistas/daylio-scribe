@@ -20,6 +20,10 @@ class DaylioScribe {
         this.calendarDate = new Date();  // Currently displayed month
         this.selectedCalendarDate = null;  // Selected day (for filtering)
 
+        // Photo gallery state
+        this.currentEntryPhotos = [];  // Photo URLs for current entry
+        this.currentPhotoIndex = 0;  // Currently viewed photo in lightbox
+
         // Default mood labels (fallback when custom_name is empty)
         this.defaultMoodLabels = {
             1: 'great',
@@ -70,6 +74,17 @@ class DaylioScribe {
         this.editorDate = document.getElementById('editorDate');
         this.editorMood = document.getElementById('editorMood');
         this.noteTitleInput = document.getElementById('noteTitleInput');
+
+        // Photo gallery
+        this.photoSection = document.getElementById('photoSection');
+        this.photoCount = document.getElementById('photoCount');
+        this.photoThumbnails = document.getElementById('photoThumbnails');
+        this.photoLightbox = document.getElementById('photoLightbox');
+        this.lightboxImage = document.getElementById('lightboxImage');
+        this.lightboxCounter = document.getElementById('lightboxCounter');
+        this.lightboxClose = document.getElementById('lightboxClose');
+        this.lightboxPrev = document.getElementById('lightboxPrev');
+        this.lightboxNext = document.getElementById('lightboxNext');
     }
 
     initQuill() {
@@ -239,6 +254,21 @@ class DaylioScribe {
         this.nextMonthBtn.addEventListener('click', () => {
             this.calendarDate.setMonth(this.calendarDate.getMonth() + 1);
             this.renderCalendar();
+        });
+
+        // Photo lightbox
+        this.lightboxClose.addEventListener('click', () => this.closeLightbox());
+        this.lightboxPrev.addEventListener('click', () => this.showPrevPhoto());
+        this.lightboxNext.addEventListener('click', () => this.showNextPhoto());
+        this.photoLightbox.querySelector('.lightbox-overlay').addEventListener('click', () => this.closeLightbox());
+
+        // Keyboard navigation for lightbox
+        document.addEventListener('keydown', (e) => {
+            if (!this.photoLightbox.classList.contains('hidden')) {
+                if (e.key === 'Escape') this.closeLightbox();
+                if (e.key === 'ArrowLeft') this.showPrevPhoto();
+                if (e.key === 'ArrowRight') this.showNextPhoto();
+            }
         });
 
         // Editor - auto-save on title change
@@ -662,9 +692,13 @@ class DaylioScribe {
             const moodLabel = this.getMoodLabel(entry.mood);
 
             const hasContent = entry.note_title?.trim() || entry.note;
+            const hasPhotos = entry.assets && entry.assets.length > 0;
+            const photoIcon = hasPhotos ? '<span class="photo-icon" title="Has photos">📷</span>' : '';
+
             div.innerHTML = `
                 <div class="entry-header">
                     <span class="entry-date">${date}</span>
+                    ${photoIcon}
                     <span class="mood-badge ${moodClass}">${moodLabel}</span>
                 </div>
                 <div class="${hasContent ? 'entry-preview' : 'entry-no-note'}">${preview}</div>
@@ -719,6 +753,133 @@ class DaylioScribe {
         document.querySelectorAll('.entry-item').forEach(el => {
             el.classList.toggle('active', parseInt(el.dataset.index) === index);
         });
+
+        // Load photos
+        this.renderPhotos(entry);
+    }
+
+    /**
+     * Render photo thumbnails for an entry
+     */
+    renderPhotos(entry) {
+        // Clear previous photos and revoke old URLs
+        this.currentEntryPhotos.forEach(url => URL.revokeObjectURL(url));
+        this.photoThumbnails.innerHTML = '';
+        this.currentEntryPhotos = [];
+
+        // Get entry asset IDs
+        const entryAssetIds = entry.assets || [];
+        if (entryAssetIds.length === 0) {
+            this.photoSection.classList.add('hidden');
+            return;
+        }
+
+        // Build asset lookup map if not already built
+        if (!this.assetMap) {
+            this.assetMap = {};
+            (this.data.assets || []).forEach(asset => {
+                this.assetMap[asset.id] = asset;
+            });
+        }
+
+        // Create thumbnails
+        entryAssetIds.forEach((assetId, index) => {
+            const asset = this.assetMap[assetId];
+            if (!asset) return;
+
+            // Construct path: assets/photos/YEAR/MONTH/CHECKSUM
+            const createdAt = new Date(asset.createdAt);
+            const year = createdAt.getFullYear();
+            const month = createdAt.getMonth() + 1;
+            const assetPath = `assets/photos/${year}/${month}/${asset.checksum}`;
+            const assetData = this.assets[assetPath];
+
+            if (assetData) {
+                const url = this.createImageUrl(assetData);
+                this.currentEntryPhotos.push(url);
+
+                const thumb = document.createElement('div');
+                thumb.className = 'photo-thumbnail';
+                thumb.innerHTML = `<img src="${url}" alt="Photo ${index + 1}">`;
+                thumb.addEventListener('click', () => this.openLightbox(this.currentEntryPhotos.length - 1));
+                this.photoThumbnails.appendChild(thumb);
+            }
+        });
+
+        // Show/hide section based on whether we found any photos
+        if (this.currentEntryPhotos.length > 0) {
+            this.photoSection.classList.remove('hidden');
+            this.photoCount.textContent = this.currentEntryPhotos.length;
+        } else {
+            this.photoSection.classList.add('hidden');
+        }
+    }
+
+    /**
+     * Create a data URL from asset binary data
+     */
+    createImageUrl(data) {
+        // Detect image type from magic bytes
+        let mimeType = 'image/jpeg';
+        if (data[0] === 0x89 && data[1] === 0x50) {
+            mimeType = 'image/png';
+        } else if (data[0] === 0x47 && data[1] === 0x49) {
+            mimeType = 'image/gif';
+        }
+
+        const blob = new Blob([data], { type: mimeType });
+        return URL.createObjectURL(blob);
+    }
+
+    /**
+     * Open the photo lightbox at a specific index
+     */
+    openLightbox(index) {
+        if (this.currentEntryPhotos.length === 0) return;
+
+        this.currentPhotoIndex = index;
+        this.updateLightboxImage();
+        this.photoLightbox.classList.remove('hidden');
+        document.body.style.overflow = 'hidden';  // Prevent scrolling
+    }
+
+    /**
+     * Close the photo lightbox
+     */
+    closeLightbox() {
+        this.photoLightbox.classList.add('hidden');
+        document.body.style.overflow = '';
+    }
+
+    /**
+     * Show the previous photo in the lightbox
+     */
+    showPrevPhoto() {
+        if (this.currentEntryPhotos.length === 0) return;
+        this.currentPhotoIndex = (this.currentPhotoIndex - 1 + this.currentEntryPhotos.length) % this.currentEntryPhotos.length;
+        this.updateLightboxImage();
+    }
+
+    /**
+     * Show the next photo in the lightbox
+     */
+    showNextPhoto() {
+        if (this.currentEntryPhotos.length === 0) return;
+        this.currentPhotoIndex = (this.currentPhotoIndex + 1) % this.currentEntryPhotos.length;
+        this.updateLightboxImage();
+    }
+
+    /**
+     * Update the lightbox image and counter
+     */
+    updateLightboxImage() {
+        this.lightboxImage.src = this.currentEntryPhotos[this.currentPhotoIndex];
+        this.lightboxCounter.textContent = `${this.currentPhotoIndex + 1} / ${this.currentEntryPhotos.length}`;
+
+        // Show/hide nav buttons for single photo
+        const hasMultiple = this.currentEntryPhotos.length > 1;
+        this.lightboxPrev.style.display = hasMultiple ? '' : 'none';
+        this.lightboxNext.style.display = hasMultiple ? '' : 'none';
     }
 
     updateCurrentEntry() {

@@ -1,0 +1,80 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Daylio Scribe</title>
+    <link rel="stylesheet" href="css/styles.css">
+</head>
+<body>
+    <div class="container">
+        <header>
+            <h1>Daylio Scribe</h1>
+            <p class="subtitle">Edit your Daylio notes with ease</p>
+        </header>
+
+        <div id="dropzone" class="dropzone">
+            <div class="dropzone-content">
+                <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
+                    <polyline points="17 8 12 3 7 8"/>
+                    <line x1="12" y1="3" x2="12" y2="15"/>
+                </svg>
+                <p>Drop your <code>backup_decoded.json</code> here</p>
+                <p class="hint">or click to browse</p>
+                <input type="file" id="fileInput" accept=".json" hidden>
+            </div>
+        </div>
+
+        <div id="app" class="app hidden">
+            <div class="toolbar">
+                <div class="stats">
+                    <span id="entryCount">0 entries</span>
+                    <span class="separator">|</span>
+                    <span id="notesCount">0 with notes</span>
+                </div>
+                <div class="actions">
+                    <label class="checkbox-label">
+                        <input type="checkbox" id="filterNotes"> Show only entries with notes
+                    </label>
+                    <button id="saveBtn" class="btn btn-primary">Save JSON</button>
+                </div>
+            </div>
+
+            <div class="main-content">
+                <div class="entries-panel">
+                    <div class="search-box">
+                        <input type="text" id="searchInput" placeholder="Search notes...">
+                    </div>
+                    <div id="entriesList" class="entries-list"></div>
+                </div>
+
+                <div class="editor-panel">
+                    <div id="editorPlaceholder" class="editor-placeholder">
+                        <p>Select an entry to edit its note</p>
+                    </div>
+                    <div id="editor" class="editor hidden">
+                        <div class="editor-header">
+                            <h3 id="editorDate"></h3>
+                            <div class="mood-badge" id="editorMood"></div>
+                        </div>
+                        <div class="editor-field">
+                            <label for="noteTitleInput">Title</label>
+                            <input type="text" id="noteTitleInput" placeholder="Note title (optional)">
+                        </div>
+                        <div class="editor-field">
+                            <label for="noteInput">Note</label>
+                            <textarea id="noteInput" placeholder="Write your note here...&#10;&#10;Use Enter for new lines - they'll be converted automatically."></textarea>
+                        </div>
+                        <div class="editor-footer">
+                            <span class="hint">Newlines will be converted to proper format on save</span>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script src="js/app.js"></script>
+</body>
+</html>

@@ -4,6 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Daylio Scribe</title>
+    <link href="https://cdn.jsdelivr.net/npm/quill@2.0.3/dist/quill.snow.css" rel="stylesheet">
     <link rel="stylesheet" href="css/styles.css">
 </head>
 <body>
@@ -62,12 +63,12 @@
                             <label for="noteTitleInput">Title</label>
                             <input type="text" id="noteTitleInput" placeholder="Note title (optional)">
                         </div>
-                        <div class="editor-field">
-                            <label for="noteInput">Note</label>
-                            <textarea id="noteInput" placeholder="Write your note here...&#10;&#10;Use Enter for new lines - they'll be converted automatically."></textarea>
+                        <div class="editor-field editor-field-note">
+                            <label>Note</label>
+                            <div id="noteEditor"></div>
                         </div>
                         <div class="editor-footer">
-                            <span class="hint">Newlines will be converted to proper format on save</span>
+                            <span class="hint">Use the toolbar or shortcuts: Ctrl/Cmd+B (bold), Ctrl/Cmd+I (italic), Ctrl/Cmd+U (underline)</span>
                         </div>
                     </div>
                 </div>
@@ -76,6 +77,7 @@
     </div>
 
     <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/quill@2.0.3/dist/quill.js"></script>
     <script src="js/app.js"></script>
 </body>
 </html>

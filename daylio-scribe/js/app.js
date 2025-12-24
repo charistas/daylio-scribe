@@ -9,6 +9,8 @@ class DaylioScribe {
         this.filteredEntries = [];
         this.currentEntryIndex = null;
         this.moods = {};  // Map of mood ID -> { label, groupId }
+        this.quill = null;  // Quill editor instance
+        this.isUpdating = false;  // Prevent recursive updates
 
         // Default mood labels (fallback when custom_name is empty)
         this.defaultMoodLabels = {
@@ -24,6 +26,7 @@ class DaylioScribe {
         this.assets = {};  // Store asset files from the ZIP
 
         this.initElements();
+        this.initQuill();
         this.bindEvents();
     }
 
@@ -47,7 +50,53 @@ class DaylioScribe {
         this.editorDate = document.getElementById('editorDate');
         this.editorMood = document.getElementById('editorMood');
         this.noteTitleInput = document.getElementById('noteTitleInput');
-        this.noteInput = document.getElementById('noteInput');
+    }
+
+    initQuill() {
+        // Initialize Quill with formatting toolbar
+        this.quill = new Quill('#noteEditor', {
+            theme: 'snow',
+            placeholder: 'Write your note here...',
+            modules: {
+                toolbar: [
+                    ['bold', 'italic', 'underline', 'strike'],
+                    [{ 'list': 'ordered'}, { 'list': 'bullet' }]
+                ],
+                keyboard: {
+                    bindings: {
+                        // Ensure standard shortcuts work
+                        bold: {
+                            key: 'B',
+                            shortKey: true,
+                            handler: function(range, context) {
+                                this.quill.format('bold', !context.format.bold);
+                            }
+                        },
+                        italic: {
+                            key: 'I',
+                            shortKey: true,
+                            handler: function(range, context) {
+                                this.quill.format('italic', !context.format.italic);
+                            }
+                        },
+                        underline: {
+                            key: 'U',
+                            shortKey: true,
+                            handler: function(range, context) {
+                                this.quill.format('underline', !context.format.underline);
+                            }
+                        }
+                    }
+                }
+            }
+        });
+
+        // Listen for text changes
+        this.quill.on('text-change', () => {
+            if (!this.isUpdating) {
+                this.updateCurrentEntry();
+            }
+        });
     }
 
     bindEvents() {
@@ -76,9 +125,8 @@ class DaylioScribe {
         this.searchInput.addEventListener('input', () => this.applyFilters());
         this.saveBtn.addEventListener('click', () => this.saveBackup());
 
-        // Editor - auto-save on change
+        // Editor - auto-save on title change
         this.noteTitleInput.addEventListener('input', () => this.updateCurrentEntry());
-        this.noteInput.addEventListener('input', () => this.updateCurrentEntry());
     }
 
     async handleFile(file) {
@@ -256,7 +304,12 @@ class DaylioScribe {
         this.editorMood.className = `mood-badge mood-${this.getMoodGroupId(entry.mood)}`;
 
         this.noteTitleInput.value = entry.note_title || '';
-        this.noteInput.value = this.htmlToPlainText(entry.note || '');
+
+        // Load HTML content into Quill
+        this.isUpdating = true;
+        const cleanHtml = this.daylioToQuillHtml(entry.note || '');
+        this.quill.root.innerHTML = cleanHtml;
+        this.isUpdating = false;
 
         // Update active state in list
         document.querySelectorAll('.entry-item').forEach(el => {
@@ -269,14 +322,163 @@ class DaylioScribe {
 
         const entry = this.entries[this.currentEntryIndex];
         entry.note_title = this.noteTitleInput.value;
-        entry.note = this.plainTextToHtml(this.noteInput.value);
+
+        // Get HTML from Quill and convert to Daylio format
+        const quillHtml = this.quill.root.innerHTML;
+        entry.note = this.quillToDaylioHtml(quillHtml);
 
         // Update preview in list
         this.renderEntries();
     }
 
     /**
-     * Convert HTML note to plain text for editing
+     * Convert Daylio HTML to Quill-compatible HTML
+     */
+    daylioToQuillHtml(html) {
+        if (!html) return '';
+
+        let result = html;
+
+        // Remove inline styles from spans (keep the tag structure)
+        result = result.replace(/<span[^>]*>/gi, '');
+        result = result.replace(/<\/span>/gi, '');
+
+        // Remove inline styles from p tags but keep the tag
+        result = result.replace(/<p[^>]*>/gi, '<p>');
+
+        // Remove inline styles from li tags but keep the tag
+        result = result.replace(/<li[^>]*>/gi, '<li>');
+
+        // Convert <div><br></div> patterns to <p><br></p> for Quill
+        result = result.replace(/<div><br\s*\/?><\/div>/gi, '<p><br></p>');
+
+        // Convert remaining divs to paragraphs
+        result = result.replace(/<div>/gi, '<p>');
+        result = result.replace(/<\/div>/gi, '</p>');
+
+        // Convert <br> to Quill line breaks within paragraphs
+        // Quill handles <br> within <p> tags
+
+        // Handle \n in the content
+        result = result.replace(/\\n/g, '<br>');
+
+        // Convert <b> to <strong> (Quill uses strong)
+        result = result.replace(/<b>/gi, '<strong>');
+        result = result.replace(/<\/b>/gi, '</strong>');
+
+        // Convert <i> to <em> (Quill uses em)
+        result = result.replace(/<i>/gi, '<em>');
+        result = result.replace(/<\/i>/gi, '</em>');
+
+        // Convert <s> or <strike> to <s> (Quill uses s for strikethrough)
+        result = result.replace(/<strike>/gi, '<s>');
+        result = result.replace(/<\/strike>/gi, '</s>');
+
+        // Remove <font> tags
+        result = result.replace(/<font[^>]*>/gi, '');
+        result = result.replace(/<\/font>/gi, '');
+
+        // Clean up empty paragraphs at the start
+        result = result.replace(/^(<p><br><\/p>)+/, '');
+
+        return result;
+    }
+
+    /**
+     * Convert Quill HTML back to Daylio-compatible HTML
+     */
+    quillToDaylioHtml(html) {
+        if (!html || html === '<p><br></p>') return '';
+
+        let result = html;
+
+        // Remove Quill UI artifacts
+        result = result.replace(/<span class="ql-ui"[^>]*>.*?<\/span>/gi, '');
+
+        // Convert Quill's list format to standard HTML
+        // Quill uses <ol> for both bullet and numbered lists with data-list attribute
+        // Convert bullet lists: <li data-list="bullet"> within <ol> to <ul><li>
+        result = result.replace(/<ol>(\s*<li data-list="bullet">)/gi, '<ul><li>');
+        result = result.replace(/<li data-list="bullet">/gi, '<li>');
+        // Fix closing tags for bullet lists that were converted
+        result = result.replace(/<\/li>(\s*)<\/ol>/gi, (match, space, offset) => {
+            // Check if this was a bullet list by looking back
+            const before = result.substring(0, offset);
+            if (before.lastIndexOf('<ul>') > before.lastIndexOf('<ol>')) {
+                return '</li>' + space + '</ul>';
+            }
+            return match;
+        });
+
+        // Handle bullet lists properly with a more robust approach
+        result = this.convertQuillLists(result);
+
+        // Remove data-list attributes from remaining list items
+        result = result.replace(/<li data-list="[^"]*">/gi, '<li>');
+
+        // Convert <strong> to <b>
+        result = result.replace(/<strong>/gi, '<b>');
+        result = result.replace(/<\/strong>/gi, '</b>');
+
+        // Convert <em> to <i>
+        result = result.replace(/<em>/gi, '<i>');
+        result = result.replace(/<\/em>/gi, '</i>');
+
+        // Convert paragraphs to divs (Daylio uses divs)
+        result = result.replace(/<p>/gi, '<div>');
+        result = result.replace(/<\/p>/gi, '</div>');
+
+        // Clean up: Handle empty divs
+        result = result.replace(/<div><\/div>/gi, '<div><br></div>');
+
+        // Remove trailing <div><br></div>
+        result = result.replace(/(<div><br><\/div>)+$/, '');
+
+        // Remove leading/trailing whitespace
+        result = result.trim();
+
+        return result;
+    }
+
+    /**
+     * Convert Quill's list format to standard HTML lists
+     */
+    convertQuillLists(html) {
+        // Parse and rebuild lists properly
+        const parser = new DOMParser();
+        const doc = parser.parseFromString('<div>' + html + '</div>', 'text/html');
+        const container = doc.body.firstChild;
+
+        // Find all ol elements and convert based on their li children
+        const ols = container.querySelectorAll('ol');
+        ols.forEach(ol => {
+            const items = ol.querySelectorAll('li');
+            if (items.length > 0) {
+                const firstItem = items[0];
+                const listType = firstItem.getAttribute('data-list');
+
+                if (listType === 'bullet') {
+                    // Convert to ul
+                    const ul = doc.createElement('ul');
+                    items.forEach(li => {
+                        li.removeAttribute('data-list');
+                        ul.appendChild(li.cloneNode(true));
+                    });
+                    ol.parentNode.replaceChild(ul, ol);
+                } else {
+                    // Keep as ol, just clean attributes
+                    items.forEach(li => {
+                        li.removeAttribute('data-list');
+                    });
+                }
+            }
+        });
+
+        return container.innerHTML;
+    }
+
+    /**
+     * Convert HTML note to plain text for preview/search
      */
     htmlToPlainText(html) {
         if (!html) return '';
@@ -316,24 +518,6 @@ class DaylioScribe {
         text = text.trim();
 
         return text;
-    }
-
-    /**
-     * Convert plain text back to HTML for Daylio
-     */
-    plainTextToHtml(text) {
-        if (!text) return '';
-
-        // Escape HTML special characters
-        let html = text
-            .replace(/&/g, '&amp;')
-            .replace(/</g, '&lt;')
-            .replace(/>/g, '&gt;');
-
-        // Convert newlines to <br>
-        html = html.replace(/\n/g, '<br>');
-
-        return html;
     }
 
     /**

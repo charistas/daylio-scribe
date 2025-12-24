@@ -332,24 +332,83 @@ header h1 {
     border-color: var(--accent);
 }
 
-.editor-field textarea {
-    width: 100%;
+.editor-field-note {
     flex: 1;
-    min-height: 300px;
-    padding: 15px;
-    border: 1px solid var(--border);
-    border-radius: 6px;
-    background: var(--bg-primary);
-    color: var(--text-primary);
-    font-size: 0.95rem;
-    font-family: inherit;
-    line-height: 1.7;
-    resize: none;
+    display: flex;
+    flex-direction: column;
+    min-height: 0;
 }
 
-.editor-field textarea:focus {
-    outline: none;
-    border-color: var(--accent);
+/* Quill Editor Styling */
+#noteEditor {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    min-height: 200px;
+}
+
+.ql-container {
+    flex: 1;
+    overflow-y: auto;
+    border: 1px solid var(--border) !important;
+    border-top: none !important;
+    border-radius: 0 0 6px 6px !important;
+    background: var(--bg-primary);
+    font-size: 0.95rem;
+    font-family: inherit;
+}
+
+.ql-editor {
+    color: var(--text-primary);
+    line-height: 1.7;
+    padding: 15px;
+}
+
+.ql-editor.ql-blank::before {
+    color: var(--text-secondary);
+    font-style: normal;
+}
+
+.ql-toolbar {
+    border: 1px solid var(--border) !important;
+    border-radius: 6px 6px 0 0 !important;
+    background: var(--bg-tertiary);
+}
+
+.ql-toolbar .ql-stroke {
+    stroke: var(--text-secondary);
+}
+
+.ql-toolbar .ql-fill {
+    fill: var(--text-secondary);
+}
+
+.ql-toolbar .ql-picker {
+    color: var(--text-secondary);
+}
+
+.ql-toolbar button:hover .ql-stroke,
+.ql-toolbar button.ql-active .ql-stroke {
+    stroke: var(--accent);
+}
+
+.ql-toolbar button:hover .ql-fill,
+.ql-toolbar button.ql-active .ql-fill {
+    fill: var(--accent);
+}
+
+.ql-toolbar button:hover,
+.ql-toolbar button.ql-active {
+    color: var(--accent);
+}
+
+.ql-editor ul,
+.ql-editor ol {
+    padding-left: 1.5em;
+}
+
+.ql-editor li {
+    margin-bottom: 0.5em;
 }
 
 .editor-footer {

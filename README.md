@@ -58,15 +58,13 @@ The core challenge is bidirectional HTML↔plaintext conversion:
 - Escape special characters (`&`, `<`, `>`)
 - Convert `\n` → `<br>`
 
-### Mood Values
+### Mood Support
 
-| Value | Label |
-|-------|-------|
-| 1 | great |
-| 2 | good |
-| 3 | meh |
-| 4 | bad |
-| 5 | awful |
+The app reads mood definitions from your backup's `customMoods` array:
+- Uses your custom mood labels if set
+- Falls back to Daylio defaults (`great`, `good`, `meh`, `bad`, `awful`)
+- Supports any number of mood levels
+- Colors are based on mood groups (1-5) for consistency
 
 ## Workflow
 

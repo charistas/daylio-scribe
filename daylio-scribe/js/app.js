@@ -8,7 +8,16 @@ class DaylioScribe {
         this.entries = [];
         this.filteredEntries = [];
         this.currentEntryIndex = null;
-        this.moodLabels = ['', 'great', 'good', 'meh', 'bad', 'awful'];
+        this.moods = {};  // Map of mood ID -> { label, groupId }
+
+        // Default mood labels (fallback when custom_name is empty)
+        this.defaultMoodLabels = {
+            1: 'great',
+            2: 'good',
+            3: 'meh',
+            4: 'bad',
+            5: 'awful'
+        };
 
         // Store the original ZIP contents for repackaging
         this.originalZip = null;
@@ -106,11 +115,49 @@ class DaylioScribe {
             this.data = JSON.parse(jsonString);
             this.entries = this.data.dayEntries || [];
 
+            // Build mood labels from customMoods
+            this.buildMoodLabels();
+
             this.showApp();
         } catch (err) {
             alert('Error loading backup: ' + err.message);
             this.dropzone.querySelector('p').textContent = 'Drop your .daylio backup file here';
         }
+    }
+
+    /**
+     * Build mood labels from customMoods in the backup
+     */
+    buildMoodLabels() {
+        this.moods = {};
+        const customMoods = this.data.customMoods || [];
+
+        for (const mood of customMoods) {
+            // Use custom_name if set, otherwise fall back to predefined name
+            let label = mood.custom_name && mood.custom_name.trim();
+            if (!label) {
+                label = this.defaultMoodLabels[mood.predefined_name_id] || `mood ${mood.id}`;
+            }
+
+            this.moods[mood.id] = {
+                label: label,
+                groupId: mood.mood_group_id
+            };
+        }
+    }
+
+    /**
+     * Get mood label by ID
+     */
+    getMoodLabel(moodId) {
+        return this.moods[moodId]?.label || `mood ${moodId}`;
+    }
+
+    /**
+     * Get mood group ID (for color coding)
+     */
+    getMoodGroupId(moodId) {
+        return this.moods[moodId]?.groupId || moodId;
     }
 
     showApp() {
@@ -165,8 +212,9 @@ class DaylioScribe {
 
             const date = this.formatDate(entry);
             const preview = this.getPreview(entry);
-            const moodClass = `mood-${entry.mood}`;
-            const moodLabel = this.moodLabels[entry.mood] || '';
+            const moodGroupId = this.getMoodGroupId(entry.mood);
+            const moodClass = `mood-${moodGroupId}`;
+            const moodLabel = this.getMoodLabel(entry.mood);
 
             div.innerHTML = `
                 <div class="entry-header">
@@ -204,8 +252,8 @@ class DaylioScribe {
         this.editor.classList.remove('hidden');
 
         this.editorDate.textContent = this.formatDate(entry);
-        this.editorMood.textContent = this.moodLabels[entry.mood] || '';
-        this.editorMood.className = `mood-badge mood-${entry.mood}`;
+        this.editorMood.textContent = this.getMoodLabel(entry.mood);
+        this.editorMood.className = `mood-badge mood-${this.getMoodGroupId(entry.mood)}`;
 
         this.noteTitleInput.value = entry.note_title || '';
         this.noteInput.value = this.htmlToPlainText(entry.note || '');

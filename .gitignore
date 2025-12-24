@@ -12,3 +12,6 @@ package-lock.json
 .idea/
 .vscode/
 *.swp
+
+# Personal notes
+TODO.md

@@ -14,6 +14,7 @@ class DaylioScribe {
         this.moods = {};  // Map of mood ID -> { label, groupId }
         this.quill = null;  // Quill editor instance
         this.isUpdating = false;  // Prevent recursive updates
+        this.hasUnsavedChanges = false;  // Track if entries have been modified
 
         // Default mood labels (fallback when custom_name is empty)
         this.defaultMoodLabels = {
@@ -202,6 +203,15 @@ class DaylioScribe {
 
         // Editor - auto-save on title change
         this.noteTitleInput.addEventListener('input', () => this.updateCurrentEntry());
+
+        // Warn before leaving with unsaved changes
+        window.addEventListener('beforeunload', (e) => {
+            if (this.hasUnsavedChanges) {
+                e.preventDefault();
+                e.returnValue = '';  // Required for Chrome
+                return '';
+            }
+        });
     }
 
     async handleFile(file) {
@@ -461,8 +471,31 @@ class DaylioScribe {
         const quillHtml = this.quill.root.innerHTML;
         entry.note = this.quillToDaylioHtml(quillHtml);
 
+        // Mark as having unsaved changes
+        this.markUnsavedChanges();
+
         // Update preview in list
         this.renderEntries();
+    }
+
+    /**
+     * Mark that there are unsaved changes and update UI
+     */
+    markUnsavedChanges() {
+        if (!this.hasUnsavedChanges) {
+            this.hasUnsavedChanges = true;
+            this.saveBtn.classList.add('has-changes');
+            this.saveBtn.textContent = 'Download Backup *';
+        }
+    }
+
+    /**
+     * Clear unsaved changes flag and update UI
+     */
+    clearUnsavedChanges() {
+        this.hasUnsavedChanges = false;
+        this.saveBtn.classList.remove('has-changes');
+        this.saveBtn.textContent = 'Download Backup';
     }
 
     /**
@@ -759,6 +792,9 @@ class DaylioScribe {
             a.click();
             document.body.removeChild(a);
             URL.revokeObjectURL(url);
+
+            // Clear unsaved changes flag
+            this.clearUnsavedChanges();
         } catch (err) {
             alert('Error saving backup: ' + err.message);
         }

@@ -198,12 +198,13 @@ header h1 {
 }
 
 .btn-primary {
-    background: var(--accent);
-    color: white;
+    background: var(--success);
+    color: #1a1a2e;
+    font-weight: 600;
 }
 
 .btn-primary:hover {
-    background: var(--accent-hover);
+    background: #3db890;
 }
 
 /* Main Content */

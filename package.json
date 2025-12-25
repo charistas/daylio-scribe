@@ -9,6 +9,8 @@
     "quill": "2.0.3"
   },
   "scripts": {
+    "build": "esbuild js/app.ts --bundle --format=iife --outfile=dist/app.js --sourcemap",
+    "build:watch": "esbuild js/app.ts --bundle --format=iife --outfile=dist/app.js --sourcemap --watch",
     "test": "vitest",
     "test:run": "vitest run",
     "update-vendor": "node scripts/update-vendor.js"
@@ -16,6 +18,7 @@
   "devDependencies": {
     "esbuild": "^0.27.2",
     "jsdom": "^27.3.0",
+    "typescript": "^5.9.3",
     "vitest": "^4.0.16"
   }
 }

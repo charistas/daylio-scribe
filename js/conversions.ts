@@ -6,7 +6,7 @@
 /**
  * Escape HTML special characters to prevent XSS
  */
-export function escapeHtml(text) {
+export function escapeHtml(text: string | null | undefined): string {
     if (text === null || text === undefined) return '';
     const div = document.createElement('div');
     div.textContent = text;
@@ -17,7 +17,7 @@ export function escapeHtml(text) {
  * Convert <br> tags to paragraph structure that Quill understands.
  * Quill's block model doesn't support <br> inside paragraphs - it silently drops them.
  */
-export function convertBrToQuillParagraphs(html) {
+export function convertBrToQuillParagraphs(html: string | null | undefined): string | null | undefined {
     if (!html) return html;
 
     let result = html;
@@ -66,12 +66,12 @@ export function convertBrToQuillParagraphs(html) {
 /**
  * Add data-list attributes to list items for Quill compatibility
  */
-export function addQuillListAttributes(html) {
+export function addQuillListAttributes(html: string | null | undefined): string | null | undefined {
     if (!html) return html;
 
     const parser = new DOMParser();
     const doc = parser.parseFromString('<div>' + html + '</div>', 'text/html');
-    const container = doc.body.firstChild;
+    const container = doc.body.firstChild as HTMLElement;
 
     // Add data-list="ordered" to li elements inside ol tags
     container.querySelectorAll('ol > li').forEach(li => {
@@ -93,10 +93,10 @@ export function addQuillListAttributes(html) {
 /**
  * Convert Quill's list format to standard HTML lists
  */
-export function convertQuillLists(html) {
+export function convertQuillLists(html: string): string {
     const parser = new DOMParser();
     const doc = parser.parseFromString('<div>' + html + '</div>', 'text/html');
-    const container = doc.body.firstChild;
+    const container = doc.body.firstChild as HTMLElement;
 
     // Find all ol elements and convert based on their li children
     const ols = container.querySelectorAll('ol');
@@ -113,7 +113,7 @@ export function convertQuillLists(html) {
                     li.removeAttribute('data-list');
                     ul.appendChild(li.cloneNode(true));
                 });
-                ol.parentNode.replaceChild(ul, ol);
+                ol.parentNode?.replaceChild(ul, ol);
             } else {
                 // Keep as ol with data-list="ordered" for Quill compatibility
                 items.forEach(li => {
@@ -129,7 +129,7 @@ export function convertQuillLists(html) {
 /**
  * Convert Daylio HTML to Quill-compatible HTML
  */
-export function daylioToQuillHtml(html) {
+export function daylioToQuillHtml(html: string | null | undefined): string {
     if (!html) return '';
 
     let result = html;
@@ -142,7 +142,7 @@ export function daylioToQuillHtml(html) {
     result = result.replace(/<p[^>]*>/gi, '<p>');
 
     // Remove inline styles from li tags but preserve data-list attribute for Quill
-    result = result.replace(/<li([^>]*)>/gi, (match, attrs) => {
+    result = result.replace(/<li([^>]*)>/gi, (_match: string, attrs: string) => {
         const dataListMatch = attrs.match(/data-list="([^"]*)"/);
         if (dataListMatch) {
             return `<li data-list="${dataListMatch[1]}">`;
@@ -177,13 +177,13 @@ export function daylioToQuillHtml(html) {
     result = result.replace(/<\/font>/gi, '');
 
     // Convert <br> tags to paragraph structure for Quill
-    result = convertBrToQuillParagraphs(result);
+    result = convertBrToQuillParagraphs(result) || '';
 
     // Clean up empty paragraphs at the start
     result = result.replace(/^(<p><br><\/p>)+/, '');
 
     // Add data-list attributes for Quill list recognition
-    result = addQuillListAttributes(result);
+    result = addQuillListAttributes(result) || '';
 
     return result;
 }
@@ -191,7 +191,7 @@ export function daylioToQuillHtml(html) {
 /**
  * Convert Quill HTML back to Daylio-compatible HTML
  */
-export function quillToDaylioHtml(html) {
+export function quillToDaylioHtml(html: string | null | undefined): string {
     if (!html || html === '<p><br></p>') return '';
 
     let result = html;
@@ -202,8 +202,8 @@ export function quillToDaylioHtml(html) {
     // Convert Quill's list format to standard HTML
     result = result.replace(/<ol>(\s*<li data-list="bullet">)/gi, '<ul><li>');
     result = result.replace(/<li data-list="bullet">/gi, '<li>');
-    result = result.replace(/<\/li>(\s*)<\/ol>/gi, (match, space, offset) => {
-        const before = result.substring(0, offset);
+    result = result.replace(/<\/li>(\s*)<\/ol>/gi, (match: string, space: string, offset: number) => {
+        const before = result!.substring(0, offset);
         if (before.lastIndexOf('<ul>') > before.lastIndexOf('<ol>')) {
             return '</li>' + space + '</ul>';
         }
@@ -240,7 +240,7 @@ export function quillToDaylioHtml(html) {
 /**
  * Convert HTML note to plain text for preview/search
  */
-export function htmlToPlainText(html) {
+export function htmlToPlainText(html: string | null | undefined): string {
     if (!html) return '';
 
     let text = html;
@@ -284,7 +284,7 @@ export function htmlToPlainText(html) {
  * Highlight search term in text (case-insensitive)
  * Returns HTML with <mark> tags around matches
  */
-export function highlightText(text, searchTerm) {
+export function highlightText(text: string | null | undefined, searchTerm: string | null | undefined): string {
     if (!searchTerm || !text) return escapeHtml(text);
 
     const escaped = escapeHtml(text);
@@ -300,7 +300,7 @@ export function highlightText(text, searchTerm) {
 /**
  * Escape a field for CSV (handle quotes, commas, newlines)
  */
-export function escapeCsvField(field) {
+export function escapeCsvField(field: unknown): string {
     if (field === null || field === undefined) return '';
 
     const str = String(field);

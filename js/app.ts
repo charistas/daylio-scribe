@@ -2,105 +2,143 @@
  * Daylio Scribe - A human-friendly editor for Daylio backup notes
  */
 
+import type { DaylioBackup, DayEntry, CustomMood, Asset, MoodInfo, DateRange, VisibleRange, ToastType } from './types.js';
+
+// Declare external globals (loaded via script tags)
+declare const Quill: any;
+declare const JSZip: any;
+
 // Highest Daylio backup version tested with this app
 const SUPPORTED_VERSION = 19;
 
 class DaylioScribe {
+    // Data
+    private data: DaylioBackup | null = null;
+    private entries: DayEntry[] = [];
+    private filteredEntries: DayEntry[] = [];
+    private currentEntryIndex: number | null = null;
+    private moods: Record<number, MoodInfo> = {};
+    private assetMap: Record<number, Asset> | null = null;
+
+    // Quill editor
+    private quill: any = null;
+    private isUpdating = false;
+    private hasUnsavedChanges = false;
+    private savedSelection: any = null;
+
+    // Calendar state
+    private calendarDate = new Date();
+    private selectedCalendarDate: Date | null = null;
+
+    // Photo gallery state
+    private currentEntryPhotos: string[] = [];
+    private currentPhotoIndex = 0;
+
+    // Virtual scrolling state
+    private itemHeight = 73;
+    private bufferSize = 5;
+    private lastVisibleStart = -1;
+    private lastVisibleEnd = -1;
+    private scrollRAF: number | null = null;
+
+    // Default mood labels
+    private defaultMoodLabels: Record<number, string> = {
+        1: 'great',
+        2: 'good',
+        3: 'meh',
+        4: 'bad',
+        5: 'awful'
+    };
+
+    // ZIP storage
+    private originalZip: any = null;
+    private assets: Record<string, Uint8Array> = {};
+
+    // DOM Elements
+    private toastContainer!: HTMLElement;
+    private dropzone!: HTMLElement;
+    private fileInput!: HTMLInputElement;
+    private app!: HTMLElement;
+    private entryCount!: HTMLElement;
+    private notesCount!: HTMLElement;
+    private backupVersion!: HTMLElement;
+    private filterNotes!: HTMLInputElement;
+    private searchInput!: HTMLInputElement;
+    private dateRangeSelect!: HTMLSelectElement;
+    private customDateRange!: HTMLElement;
+    private dateFrom!: HTMLInputElement;
+    private dateTo!: HTMLInputElement;
+    private entriesList!: HTMLElement;
+    private miniCalendar!: HTMLElement;
+    private calendarTitle!: HTMLElement;
+    private calendarGrid!: HTMLElement;
+    private prevMonthBtn!: HTMLElement;
+    private nextMonthBtn!: HTMLElement;
+    private saveBtn!: HTMLElement;
+    private exportCsvBtn!: HTMLElement;
+    private editorPlaceholder!: HTMLElement;
+    private editor!: HTMLElement;
+    private editorDate!: HTMLElement;
+    private editorMood!: HTMLElement;
+    private noteTitleInput!: HTMLInputElement;
+    private photoSection!: HTMLElement;
+    private photoCount!: HTMLElement;
+    private photoThumbnails!: HTMLElement;
+    private photoLightbox!: HTMLElement;
+    private lightboxImage!: HTMLImageElement;
+    private lightboxCounter!: HTMLElement;
+    private lightboxClose!: HTMLElement;
+    private lightboxPrev!: HTMLElement;
+    private lightboxNext!: HTMLElement;
+    private emojiPickerPopup!: HTMLElement;
+    private emojiPicker!: HTMLElement;
+
     constructor() {
-        this.data = null;
-        this.entries = [];
-        this.filteredEntries = [];
-        this.currentEntryIndex = null;
-        this.moods = {};  // Map of mood ID -> { label, groupId }
-        this.quill = null;  // Quill editor instance
-        this.isUpdating = false;  // Prevent recursive updates
-        this.hasUnsavedChanges = false;  // Track if entries have been modified
-
-        // Calendar state
-        this.calendarDate = new Date();  // Currently displayed month
-        this.selectedCalendarDate = null;  // Selected day (for filtering)
-
-        // Photo gallery state
-        this.currentEntryPhotos = [];  // Photo URLs for current entry
-        this.currentPhotoIndex = 0;  // Currently viewed photo in lightbox
-
-        // Virtual scrolling state
-        this.itemHeight = 73;      // Fixed height per entry (68px + 5px margin)
-        this.bufferSize = 5;       // Extra items to render above/below viewport
-        this.lastVisibleStart = -1; // Track last rendered range to avoid unnecessary re-renders
-        this.lastVisibleEnd = -1;
-        this.scrollRAF = null;     // requestAnimationFrame handle for scroll throttling
-
-        // Default mood labels (fallback when custom_name is empty)
-        this.defaultMoodLabels = {
-            1: 'great',
-            2: 'good',
-            3: 'meh',
-            4: 'bad',
-            5: 'awful'
-        };
-
-        // Store the original ZIP contents for repackaging
-        this.originalZip = null;
-        this.assets = {};  // Store asset files from the ZIP
-
         this.initElements();
         this.initQuill();
         this.bindEvents();
         this.initVirtualScroll();
     }
 
-    initElements() {
-        // Toast container
-        this.toastContainer = document.getElementById('toastContainer');
-
-        // Dropzone
-        this.dropzone = document.getElementById('dropzone');
-        this.fileInput = document.getElementById('fileInput');
-
-        // App
-        this.app = document.getElementById('app');
-        this.entryCount = document.getElementById('entryCount');
-        this.notesCount = document.getElementById('notesCount');
-        this.backupVersion = document.getElementById('backupVersion');
-        this.filterNotes = document.getElementById('filterNotes');
-        this.searchInput = document.getElementById('searchInput');
-        this.dateRangeSelect = document.getElementById('dateRangeSelect');
-        this.customDateRange = document.getElementById('customDateRange');
-        this.dateFrom = document.getElementById('dateFrom');
-        this.dateTo = document.getElementById('dateTo');
-        this.entriesList = document.getElementById('entriesList');
-
-        // Mini calendar
-        this.miniCalendar = document.getElementById('miniCalendar');
-        this.calendarTitle = document.getElementById('calendarTitle');
-        this.calendarGrid = document.getElementById('calendarGrid');
-        this.prevMonthBtn = document.getElementById('prevMonth');
-        this.nextMonthBtn = document.getElementById('nextMonth');
-        this.saveBtn = document.getElementById('saveBtn');
-        this.exportCsvBtn = document.getElementById('exportCsvBtn');
-
-        // Editor
-        this.editorPlaceholder = document.getElementById('editorPlaceholder');
-        this.editor = document.getElementById('editor');
-        this.editorDate = document.getElementById('editorDate');
-        this.editorMood = document.getElementById('editorMood');
-        this.noteTitleInput = document.getElementById('noteTitleInput');
-
-        // Photo gallery
-        this.photoSection = document.getElementById('photoSection');
-        this.photoCount = document.getElementById('photoCount');
-        this.photoThumbnails = document.getElementById('photoThumbnails');
-        this.photoLightbox = document.getElementById('photoLightbox');
-        this.lightboxImage = document.getElementById('lightboxImage');
-        this.lightboxCounter = document.getElementById('lightboxCounter');
-        this.lightboxClose = document.getElementById('lightboxClose');
-        this.lightboxPrev = document.getElementById('lightboxPrev');
-        this.lightboxNext = document.getElementById('lightboxNext');
+    private initElements(): void {
+        this.toastContainer = document.getElementById('toastContainer')!;
+        this.dropzone = document.getElementById('dropzone')!;
+        this.fileInput = document.getElementById('fileInput') as HTMLInputElement;
+        this.app = document.getElementById('app')!;
+        this.entryCount = document.getElementById('entryCount')!;
+        this.notesCount = document.getElementById('notesCount')!;
+        this.backupVersion = document.getElementById('backupVersion')!;
+        this.filterNotes = document.getElementById('filterNotes') as HTMLInputElement;
+        this.searchInput = document.getElementById('searchInput') as HTMLInputElement;
+        this.dateRangeSelect = document.getElementById('dateRangeSelect') as HTMLSelectElement;
+        this.customDateRange = document.getElementById('customDateRange')!;
+        this.dateFrom = document.getElementById('dateFrom') as HTMLInputElement;
+        this.dateTo = document.getElementById('dateTo') as HTMLInputElement;
+        this.entriesList = document.getElementById('entriesList')!;
+        this.miniCalendar = document.getElementById('miniCalendar')!;
+        this.calendarTitle = document.getElementById('calendarTitle')!;
+        this.calendarGrid = document.getElementById('calendarGrid')!;
+        this.prevMonthBtn = document.getElementById('prevMonth')!;
+        this.nextMonthBtn = document.getElementById('nextMonth')!;
+        this.saveBtn = document.getElementById('saveBtn')!;
+        this.exportCsvBtn = document.getElementById('exportCsvBtn')!;
+        this.editorPlaceholder = document.getElementById('editorPlaceholder')!;
+        this.editor = document.getElementById('editor')!;
+        this.editorDate = document.getElementById('editorDate')!;
+        this.editorMood = document.getElementById('editorMood')!;
+        this.noteTitleInput = document.getElementById('noteTitleInput') as HTMLInputElement;
+        this.photoSection = document.getElementById('photoSection')!;
+        this.photoCount = document.getElementById('photoCount')!;
+        this.photoThumbnails = document.getElementById('photoThumbnails')!;
+        this.photoLightbox = document.getElementById('photoLightbox')!;
+        this.lightboxImage = document.getElementById('lightboxImage') as HTMLImageElement;
+        this.lightboxCounter = document.getElementById('lightboxCounter')!;
+        this.lightboxClose = document.getElementById('lightboxClose')!;
+        this.lightboxPrev = document.getElementById('lightboxPrev')!;
+        this.lightboxNext = document.getElementById('lightboxNext')!;
     }
 
-    initQuill() {
-        // Initialize Quill with formatting toolbar
+    private initQuill(): void {
         this.quill = new Quill('#noteEditor', {
             theme: 'snow',
             placeholder: 'Write your note here...',
@@ -117,25 +155,24 @@ class DaylioScribe {
                 },
                 keyboard: {
                     bindings: {
-                        // Ensure standard shortcuts work
                         bold: {
                             key: 'B',
                             shortKey: true,
-                            handler: function(range, context) {
+                            handler: function(this: any, _range: any, context: any) {
                                 this.quill.format('bold', !context.format.bold);
                             }
                         },
                         italic: {
                             key: 'I',
                             shortKey: true,
-                            handler: function(range, context) {
+                            handler: function(this: any, _range: any, context: any) {
                                 this.quill.format('italic', !context.format.italic);
                             }
                         },
                         underline: {
                             key: 'U',
                             shortKey: true,
-                            handler: function(range, context) {
+                            handler: function(this: any, _range: any, context: any) {
                                 this.quill.format('underline', !context.format.underline);
                             }
                         }
@@ -144,33 +181,30 @@ class DaylioScribe {
             }
         });
 
-        // Listen for text changes - only save on USER edits, not API/normalization changes
-        this.quill.on('text-change', (delta, oldDelta, source) => {
+        this.quill.on('text-change', (_delta: any, _oldDelta: any, source: string) => {
             if (!this.isUpdating && source === 'user') {
                 this.updateCurrentEntry();
             }
         });
 
-        // Initialize emoji picker
         this.initEmojiPicker();
     }
 
-    initEmojiPicker() {
-        this.emojiPickerPopup = document.getElementById('emojiPickerPopup');
-        this.emojiPicker = document.querySelector('emoji-picker');
+    private initEmojiPicker(): void {
+        this.emojiPickerPopup = document.getElementById('emojiPickerPopup')!;
+        this.emojiPicker = document.querySelector('emoji-picker')!;
 
-        // Handle emoji selection
-        this.emojiPicker.addEventListener('emoji-click', (event) => {
+        this.emojiPicker.addEventListener('emoji-click', (event: any) => {
             const emoji = event.detail.unicode;
             this.insertEmoji(emoji);
             this.hideEmojiPicker();
         });
 
-        // Close picker when clicking outside
-        document.addEventListener('click', (event) => {
+        document.addEventListener('click', (event: MouseEvent) => {
             if (!this.emojiPickerPopup.classList.contains('hidden')) {
-                const isClickInside = this.emojiPickerPopup.contains(event.target) ||
-                                     event.target.closest('.ql-emoji');
+                const target = event.target as HTMLElement;
+                const isClickInside = this.emojiPickerPopup.contains(target) ||
+                                     target.closest('.ql-emoji');
                 if (!isClickInside) {
                     this.hideEmojiPicker();
                 }
@@ -178,7 +212,7 @@ class DaylioScribe {
         });
     }
 
-    toggleEmojiPicker() {
+    private toggleEmojiPicker(): void {
         if (this.emojiPickerPopup.classList.contains('hidden')) {
             this.showEmojiPicker();
         } else {
@@ -186,41 +220,38 @@ class DaylioScribe {
         }
     }
 
-    showEmojiPicker() {
-        // Position the picker near the emoji button
-        const emojiButton = document.querySelector('.ql-emoji');
+    private showEmojiPicker(): void {
+        const emojiButton = document.querySelector('.ql-emoji') as HTMLElement;
         const rect = emojiButton.getBoundingClientRect();
 
         this.emojiPickerPopup.style.top = (rect.bottom + 5) + 'px';
         this.emojiPickerPopup.style.left = rect.left + 'px';
 
-        // Make sure it doesn't go off screen
         const pickerWidth = 350;
         if (rect.left + pickerWidth > window.innerWidth) {
             this.emojiPickerPopup.style.left = (window.innerWidth - pickerWidth - 10) + 'px';
         }
 
         this.emojiPickerPopup.classList.remove('hidden');
-
-        // Store current selection for later insertion
         this.savedSelection = this.quill.getSelection();
     }
 
-    hideEmojiPicker() {
+    private hideEmojiPicker(): void {
         this.emojiPickerPopup.classList.add('hidden');
     }
 
-    insertEmoji(emoji) {
-        // Restore selection or insert at end
+    private insertEmoji(emoji: string): void {
         const range = this.savedSelection || { index: this.quill.getLength() - 1 };
         this.quill.insertText(range.index, emoji, 'user');
         this.quill.setSelection(range.index + emoji.length);
     }
 
-    bindEvents() {
-        // File drop/select
+    private bindEvents(): void {
         this.dropzone.addEventListener('click', () => this.fileInput.click());
-        this.fileInput.addEventListener('change', (e) => this.handleFile(e.target.files[0]));
+        this.fileInput.addEventListener('change', (e) => {
+            const target = e.target as HTMLInputElement;
+            if (target.files?.[0]) this.handleFile(target.files[0]);
+        });
 
         this.dropzone.addEventListener('dragover', (e) => {
             e.preventDefault();
@@ -234,20 +265,18 @@ class DaylioScribe {
         this.dropzone.addEventListener('drop', (e) => {
             e.preventDefault();
             this.dropzone.classList.remove('dragover');
-            const file = e.dataTransfer.files[0];
+            const file = e.dataTransfer?.files[0];
             if (file) this.handleFile(file);
         });
 
-        // Toolbar
         this.filterNotes.addEventListener('change', () => {
-            this.renderCalendar();  // Update calendar to reflect filter
+            this.renderCalendar();
             this.applyFilters();
         });
         this.searchInput.addEventListener('input', () => this.applyFilters());
         this.saveBtn.addEventListener('click', () => this.saveBackup());
         this.exportCsvBtn.addEventListener('click', () => this.exportCsv());
 
-        // Date range filter
         this.dateRangeSelect.addEventListener('change', () => {
             if (this.dateRangeSelect.value === 'custom') {
                 this.customDateRange.classList.remove('hidden');
@@ -259,7 +288,6 @@ class DaylioScribe {
         this.dateFrom.addEventListener('change', () => this.applyFilters());
         this.dateTo.addEventListener('change', () => this.applyFilters());
 
-        // Mini calendar navigation
         this.prevMonthBtn.addEventListener('click', () => {
             this.calendarDate.setMonth(this.calendarDate.getMonth() - 1);
             this.renderCalendar();
@@ -269,13 +297,11 @@ class DaylioScribe {
             this.renderCalendar();
         });
 
-        // Photo lightbox
         this.lightboxClose.addEventListener('click', () => this.closeLightbox());
         this.lightboxPrev.addEventListener('click', () => this.showPrevPhoto());
         this.lightboxNext.addEventListener('click', () => this.showNextPhoto());
-        this.photoLightbox.querySelector('.lightbox-overlay').addEventListener('click', () => this.closeLightbox());
+        this.photoLightbox.querySelector('.lightbox-overlay')?.addEventListener('click', () => this.closeLightbox());
 
-        // Keyboard navigation for lightbox
         document.addEventListener('keydown', (e) => {
             if (!this.photoLightbox.classList.contains('hidden')) {
                 if (e.key === 'Escape') this.closeLightbox();
@@ -284,43 +310,38 @@ class DaylioScribe {
             }
         });
 
-        // Editor - auto-save on title change
         this.noteTitleInput.addEventListener('input', () => this.updateCurrentEntry());
 
-        // Warn before leaving with unsaved changes
         window.addEventListener('beforeunload', (e) => {
             if (this.hasUnsavedChanges) {
                 e.preventDefault();
-                e.returnValue = '';  // Required for Chrome
+                e.returnValue = '';
                 return '';
             }
         });
     }
 
-    async handleFile(file) {
+    private async handleFile(file: File): Promise<void> {
         if (!file || !file.name.endsWith('.daylio')) {
             this.showToast('error', 'Invalid File', 'Please select a .daylio backup file exported from the Daylio app.');
             return;
         }
 
         try {
-            // Show loading state
-            this.dropzone.querySelector('p').textContent = 'Loading...';
+            const dropzoneP = this.dropzone.querySelector('p');
+            if (dropzoneP) dropzoneP.textContent = 'Loading...';
 
-            // Load the ZIP file
             this.originalZip = await JSZip.loadAsync(file);
 
-            // Extract and store assets
             this.assets = {};
             const assetFiles = Object.keys(this.originalZip.files).filter(
-                name => name.startsWith('assets/') && !this.originalZip.files[name].dir
+                (name: string) => name.startsWith('assets/') && !this.originalZip.files[name].dir
             );
 
             for (const assetPath of assetFiles) {
                 this.assets[assetPath] = await this.originalZip.files[assetPath].async('uint8array');
             }
 
-            // Extract and decode the backup.daylio file (base64 encoded JSON)
             const backupFile = this.originalZip.file('backup.daylio');
             if (!backupFile) {
                 throw new Error('backup.daylio not found in the archive');
@@ -330,36 +351,27 @@ class DaylioScribe {
             const jsonString = this.base64DecodeUtf8(base64Content.trim());
             this.data = JSON.parse(jsonString);
 
-            // Validate backup structure
             this.validateBackupStructure();
 
-            // Check backup version compatibility
             if (!this.checkVersion()) {
-                this.dropzone.querySelector('p').textContent = 'Drop your .daylio backup file here';
+                if (dropzoneP) dropzoneP.textContent = 'Drop your .daylio backup file here';
                 return;
             }
 
-            this.entries = this.data.dayEntries || [];
-
-            // Build mood labels from customMoods
+            this.entries = this.data!.dayEntries || [];
             this.buildMoodLabels();
-
             this.showApp();
         } catch (err) {
-            this.showToast('error', 'Failed to Load Backup', err.message);
-            this.dropzone.querySelector('p').textContent = 'Drop your .daylio backup file here';
+            this.showToast('error', 'Failed to Load Backup', (err as Error).message);
+            const dropzoneP = this.dropzone.querySelector('p');
+            if (dropzoneP) dropzoneP.textContent = 'Drop your .daylio backup file here';
         }
     }
 
-    /**
-     * Check if the backup version is compatible with this app
-     * Returns true if safe to proceed, false if user cancelled
-     */
-    checkVersion() {
-        const backupVersion = this.data.version;
+    private checkVersion(): boolean {
+        const backupVersion = this.data?.version;
 
         if (backupVersion === undefined) {
-            // Very old backup without version field - proceed with caution
             console.warn('Backup has no version field - proceeding anyway');
             return true;
         }
@@ -380,11 +392,7 @@ class DaylioScribe {
         return true;
     }
 
-    /**
-     * Validate that the backup has the expected Daylio structure
-     * Throws an error if validation fails
-     */
-    validateBackupStructure() {
+    private validateBackupStructure(): void {
         if (!this.data || typeof this.data !== 'object') {
             throw new Error('Invalid backup: not a valid JSON object');
         }
@@ -397,7 +405,6 @@ class DaylioScribe {
             throw new Error('Invalid backup: missing or invalid customMoods array');
         }
 
-        // Validate each entry has required fields
         for (let i = 0; i < Math.min(this.data.dayEntries.length, 5); i++) {
             const entry = this.data.dayEntries[i];
             if (typeof entry.datetime !== 'number') {
@@ -409,16 +416,12 @@ class DaylioScribe {
         }
     }
 
-    /**
-     * Build mood labels from customMoods in the backup
-     */
-    buildMoodLabels() {
+    private buildMoodLabels(): void {
         this.moods = {};
-        const customMoods = this.data.customMoods || [];
+        const customMoods = this.data?.customMoods || [];
 
         for (const mood of customMoods) {
-            // Use custom_name if set, otherwise fall back to predefined name
-            let label = mood.custom_name && mood.custom_name.trim();
+            let label = mood.custom_name?.trim();
             if (!label) {
                 label = this.defaultMoodLabels[mood.predefined_name_id] || `mood ${mood.id}`;
             }
@@ -430,61 +433,49 @@ class DaylioScribe {
         }
     }
 
-    /**
-     * Get mood label by ID
-     */
-    getMoodLabel(moodId) {
+    private getMoodLabel(moodId: number): string {
         return this.moods[moodId]?.label || `mood ${moodId}`;
     }
 
-    /**
-     * Get mood group ID (for color coding)
-     */
-    getMoodGroupId(moodId) {
+    private getMoodGroupId(moodId: number): number {
         return this.moods[moodId]?.groupId || moodId;
     }
 
-    showApp() {
+    private showApp(): void {
         this.dropzone.classList.add('hidden');
         this.app.classList.remove('hidden');
 
-        // Update stats
         const withNotes = this.entries.filter(e => e.note && e.note.length > 0).length;
         this.entryCount.textContent = `${this.entries.length} entries`;
         this.notesCount.textContent = `${withNotes} with notes`;
 
-        // Display backup version with warning indicator if unsupported
-        const version = this.data.version;
+        const version = this.data?.version;
         if (version !== undefined) {
             this.backupVersion.textContent = `v${version}`;
             if (version > SUPPORTED_VERSION) {
                 this.backupVersion.classList.add('version-warning');
-                this.backupVersion.dataset.tooltip = `Unsupported version (tested up to v${SUPPORTED_VERSION})`;
+                (this.backupVersion as HTMLElement).dataset.tooltip = `Unsupported version (tested up to v${SUPPORTED_VERSION})`;
             } else {
                 this.backupVersion.classList.remove('version-warning');
-                this.backupVersion.dataset.tooltip = 'Backup format version';
+                (this.backupVersion as HTMLElement).dataset.tooltip = 'Backup format version';
             }
         } else {
             this.backupVersion.textContent = 'v?';
-            this.backupVersion.dataset.tooltip = 'Unknown version';
+            (this.backupVersion as HTMLElement).dataset.tooltip = 'Unknown version';
         }
 
-        // Show and render mini calendar
         this.miniCalendar.classList.add('visible');
         this.renderCalendar();
-
         this.applyFilters();
     }
 
-    applyFilters() {
+    private applyFilters(): void {
         let filtered = [...this.entries];
 
-        // Filter by notes
         if (this.filterNotes.checked) {
             filtered = filtered.filter(e => e.note && e.note.length > 0);
         }
 
-        // Filter by date range
         const dateRange = this.getDateRange();
         if (dateRange) {
             filtered = filtered.filter(e => {
@@ -493,7 +484,6 @@ class DaylioScribe {
             });
         }
 
-        // Search
         const searchTerm = this.searchInput.value.toLowerCase().trim();
         if (searchTerm) {
             filtered = filtered.filter(e => {
@@ -503,21 +493,16 @@ class DaylioScribe {
             });
         }
 
-        // Sort by date (newest first)
         filtered.sort((a, b) => b.datetime - a.datetime);
 
         this.filteredEntries = filtered;
         this.renderEntries();
     }
 
-    /**
-     * Get the date range based on the selected filter
-     * Returns { from, to } timestamps or null for "all time"
-     */
-    getDateRange() {
+    private getDateRange(): DateRange | null {
         const selection = this.dateRangeSelect.value;
         const now = new Date();
-        let from, to;
+        let from: Date, to: Date;
 
         switch (selection) {
             case 'all':
@@ -548,14 +533,14 @@ class DaylioScribe {
                 to = new Date(now.getFullYear() - 1, 11, 31, 23, 59, 59, 999);
                 break;
 
-            case 'custom':
+            case 'custom': {
                 const fromVal = this.dateFrom.value;
                 const toVal = this.dateTo.value;
                 if (!fromVal && !toVal) return null;
-                // Parse as local time, not UTC
                 from = fromVal ? new Date(fromVal + 'T00:00:00') : new Date(0);
                 to = toVal ? new Date(toVal + 'T23:59:59.999') : now;
                 break;
+            }
 
             default:
                 return null;
@@ -564,51 +549,39 @@ class DaylioScribe {
         return { from: from.getTime(), to: to.getTime() };
     }
 
-    /**
-     * Render the mini calendar for the current month
-     */
-    renderCalendar() {
+    private renderCalendar(): void {
         const year = this.calendarDate.getFullYear();
         const month = this.calendarDate.getMonth();
 
-        // Update title
         const monthNames = ['January', 'February', 'March', 'April', 'May', 'June',
                            'July', 'August', 'September', 'October', 'November', 'December'];
         this.calendarTitle.textContent = `${monthNames[month]} ${year}`;
 
-        // Build entries map for quick lookup
         const entriesMap = this.buildEntriesMap();
 
-        // Get first day of month and total days
         const firstDay = new Date(year, month, 1);
         const lastDay = new Date(year, month + 1, 0);
         const totalDays = lastDay.getDate();
 
-        // Get starting day (0 = Monday in our grid)
         let startDay = firstDay.getDay() - 1;
-        if (startDay < 0) startDay = 6;  // Sunday becomes 6
+        if (startDay < 0) startDay = 6;
 
-        // Get today for highlighting
         const today = new Date();
         const isCurrentMonth = today.getFullYear() === year && today.getMonth() === month;
 
-        // Build calendar grid
         this.calendarGrid.innerHTML = '';
 
-        // Add empty cells for days before month starts
         for (let i = 0; i < startDay; i++) {
             const prevMonthDay = new Date(year, month, -startDay + i + 1);
             this.calendarGrid.appendChild(this.createDayCell(prevMonthDay, entriesMap, true));
         }
 
-        // Add days of the month
         for (let day = 1; day <= totalDays; day++) {
             const date = new Date(year, month, day);
             const isToday = isCurrentMonth && day === today.getDate();
             this.calendarGrid.appendChild(this.createDayCell(date, entriesMap, false, isToday));
         }
 
-        // Add empty cells for days after month ends (fill to 6 rows)
         const cellsUsed = startDay + totalDays;
         const cellsNeeded = Math.ceil(cellsUsed / 7) * 7;
         for (let i = 0; i < cellsNeeded - cellsUsed; i++) {
@@ -617,13 +590,10 @@ class DaylioScribe {
         }
     }
 
-    /**
-     * Create a calendar day cell element
-     */
-    createDayCell(date, entriesMap, isOtherMonth, isToday = false) {
+    private createDayCell(date: Date, entriesMap: Record<string, DayEntry[]>, isOtherMonth: boolean, isToday = false): HTMLElement {
         const cell = document.createElement('div');
         cell.className = 'calendar-day';
-        cell.textContent = date.getDate();
+        cell.textContent = String(date.getDate());
 
         if (isOtherMonth) {
             cell.classList.add('other-month');
@@ -633,7 +603,6 @@ class DaylioScribe {
             cell.classList.add('today');
         }
 
-        // Check if this date is selected
         if (this.selectedCalendarDate) {
             const selDate = this.selectedCalendarDate;
             if (date.getFullYear() === selDate.getFullYear() &&
@@ -643,7 +612,6 @@ class DaylioScribe {
             }
         }
 
-        // Check if date is in the future
         const today = new Date();
         today.setHours(0, 0, 0, 0);
         const cellDate = new Date(date);
@@ -655,39 +623,31 @@ class DaylioScribe {
             return cell;
         }
 
-        // Check for entries on this day
         const dateKey = `${date.getFullYear()}-${date.getMonth()}-${date.getDate()}`;
         const dayEntries = entriesMap[dateKey];
         if (dayEntries && dayEntries.length > 0) {
             cell.classList.add('has-entry');
-            // Use the mood color of the first entry
             const moodGroupId = this.getMoodGroupId(dayEntries[0].mood);
-            const moodColors = {
-                1: '#4ecca3',  // great
-                2: '#7ed957',  // good
-                3: '#ffd93d',  // meh
-                4: '#ff8c42',  // bad
-                5: '#e94560'   // awful
+            const moodColors: Record<number, string> = {
+                1: '#4ecca3',
+                2: '#7ed957',
+                3: '#ffd93d',
+                4: '#ff8c42',
+                5: '#e94560'
             };
             cell.style.setProperty('--mood-color', moodColors[moodGroupId] || '#a0a0a0');
         }
 
-        // Click handler
         cell.addEventListener('click', () => this.handleCalendarDayClick(date));
 
         return cell;
     }
 
-    /**
-     * Build a map of date -> entries for quick lookup
-     * Respects the "notes only" filter
-     */
-    buildEntriesMap() {
-        const map = {};
+    private buildEntriesMap(): Record<string, DayEntry[]> {
+        const map: Record<string, DayEntry[]> = {};
         const notesOnly = this.filterNotes.checked;
 
         for (const entry of this.entries) {
-            // Skip entries without notes if filter is enabled
             if (notesOnly && (!entry.note || entry.note.length === 0)) {
                 continue;
             }
@@ -700,26 +660,19 @@ class DaylioScribe {
         return map;
     }
 
-    /**
-     * Handle click on a calendar day
-     */
-    handleCalendarDayClick(date) {
-        // Toggle selection
+    private handleCalendarDayClick(date: Date): void {
         if (this.selectedCalendarDate &&
             date.getFullYear() === this.selectedCalendarDate.getFullYear() &&
             date.getMonth() === this.selectedCalendarDate.getMonth() &&
             date.getDate() === this.selectedCalendarDate.getDate()) {
-            // Clicking same day - deselect
             this.selectedCalendarDate = null;
             this.dateRangeSelect.value = 'all';
             this.customDateRange.classList.add('hidden');
         } else {
-            // Select this day
             this.selectedCalendarDate = date;
             this.dateRangeSelect.value = 'custom';
             this.customDateRange.classList.remove('hidden');
 
-            // Set the date inputs (format locally, not UTC)
             const dateStr = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`;
             this.dateFrom.value = dateStr;
             this.dateTo.value = dateStr;
@@ -729,17 +682,11 @@ class DaylioScribe {
         this.applyFilters();
     }
 
-    /**
-     * Initialize virtual scrolling by attaching scroll listener
-     */
-    initVirtualScroll() {
+    private initVirtualScroll(): void {
         this.entriesList.addEventListener('scroll', () => this.handleScroll());
     }
 
-    /**
-     * Handle scroll events with requestAnimationFrame throttling
-     */
-    handleScroll() {
+    private handleScroll(): void {
         if (this.scrollRAF) return;
 
         this.scrollRAF = requestAnimationFrame(() => {
@@ -748,34 +695,24 @@ class DaylioScribe {
         });
     }
 
-    /**
-     * Calculate the visible range of entries based on scroll position
-     */
-    calculateVisibleRange() {
+    private calculateVisibleRange(): VisibleRange {
         const scrollTop = this.entriesList.scrollTop;
         const containerHeight = this.entriesList.clientHeight;
         const totalItems = this.filteredEntries.length;
 
-        // Calculate visible range
         const visibleStart = Math.floor(scrollTop / this.itemHeight);
         const visibleCount = Math.ceil(containerHeight / this.itemHeight);
         const visibleEnd = Math.min(visibleStart + visibleCount, totalItems);
 
-        // Add buffer
         const bufferedStart = Math.max(0, visibleStart - this.bufferSize);
         const bufferedEnd = Math.min(totalItems, visibleEnd + this.bufferSize);
 
         return { bufferedStart, bufferedEnd, totalItems };
     }
 
-    /**
-     * Render only visible entries with virtual scrolling
-     * @param {boolean} forceRender - Force re-render even if range unchanged
-     */
-    renderVirtualEntries(forceRender = true) {
+    private renderVirtualEntries(forceRender = true): void {
         const { bufferedStart, bufferedEnd, totalItems } = this.calculateVisibleRange();
 
-        // Skip if range hasn't changed (unless forced)
         if (!forceRender &&
             bufferedStart === this.lastVisibleStart &&
             bufferedEnd === this.lastVisibleEnd) {
@@ -785,13 +722,9 @@ class DaylioScribe {
         this.lastVisibleStart = bufferedStart;
         this.lastVisibleEnd = bufferedEnd;
 
-        // Get current search term for highlighting
         const searchTerm = this.searchInput.value.trim();
-
-        // Create document fragment for efficient DOM manipulation
         const fragment = document.createDocumentFragment();
 
-        // Top spacer
         if (bufferedStart > 0) {
             const topSpacer = document.createElement('div');
             topSpacer.className = 'virtual-spacer';
@@ -799,14 +732,13 @@ class DaylioScribe {
             fragment.appendChild(topSpacer);
         }
 
-        // Render visible entries
         for (let i = bufferedStart; i < bufferedEnd; i++) {
             const entry = this.filteredEntries[i];
             const originalIndex = this.entries.indexOf(entry);
             const div = document.createElement('div');
             div.className = 'entry-item';
-            div.dataset.index = originalIndex;
-            div.dataset.virtualIndex = i;
+            div.dataset.index = String(originalIndex);
+            div.dataset.virtualIndex = String(i);
 
             if (originalIndex === this.currentEntryIndex) {
                 div.classList.add('active');
@@ -835,7 +767,6 @@ class DaylioScribe {
             fragment.appendChild(div);
         }
 
-        // Bottom spacer
         const remainingItems = totalItems - bufferedEnd;
         if (remainingItems > 0) {
             const bottomSpacer = document.createElement('div');
@@ -844,57 +775,31 @@ class DaylioScribe {
             fragment.appendChild(bottomSpacer);
         }
 
-        // Replace content
         this.entriesList.innerHTML = '';
         this.entriesList.appendChild(fragment);
     }
 
-    /**
-     * Render entries - wrapper that uses virtual scrolling
-     */
-    renderEntries() {
-        // Reset scroll position and visible range tracking on filter change
+    private renderEntries(): void {
         this.lastVisibleStart = -1;
         this.lastVisibleEnd = -1;
         this.entriesList.scrollTop = 0;
         this.renderVirtualEntries(true);
     }
 
-    /**
-     * Scroll to ensure a specific entry is visible
-     */
-    scrollToEntry(filteredIndex) {
-        const scrollTop = filteredIndex * this.itemHeight;
-        const containerHeight = this.entriesList.clientHeight;
-        const currentScroll = this.entriesList.scrollTop;
-
-        // Check if entry is already visible
-        if (scrollTop >= currentScroll &&
-            scrollTop + this.itemHeight <= currentScroll + containerHeight) {
-            return; // Already visible
-        }
-
-        // Scroll to center the entry
-        this.entriesList.scrollTop = Math.max(0, scrollTop - containerHeight / 2 + this.itemHeight / 2);
-    }
-
-    formatDate(entry) {
+    private formatDate(entry: DayEntry): string {
         const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun',
                        'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
-        // Daylio uses 0-indexed months (0 = January)
         return `${months[entry.month]} ${entry.day}, ${entry.year}`;
     }
 
-    getPreview(entry, searchTerm = '') {
+    private getPreview(entry: DayEntry, searchTerm = ''): string {
         const hasNote = entry.note && entry.note.length > 0;
         const hasTitle = entry.note_title && entry.note_title.trim();
 
-        // No content at all
         if (!hasTitle && !hasNote) {
             return this.escapeHtml('No note');
         }
 
-        // If searching, try to show matching snippet from note content
         if (searchTerm && hasNote) {
             const plain = this.htmlToPlainText(entry.note);
             const lowerPlain = plain.toLowerCase();
@@ -902,22 +807,18 @@ class DaylioScribe {
             const matchIndex = lowerPlain.indexOf(lowerTerm);
 
             if (matchIndex !== -1) {
-                // Extract snippet around the match
                 const snippetLength = 60;
                 const termLength = searchTerm.length;
 
-                // Center the match in the snippet
                 let start = Math.max(0, matchIndex - Math.floor((snippetLength - termLength) / 2));
                 let end = Math.min(plain.length, start + snippetLength);
 
-                // Adjust start if we hit the end
                 if (end === plain.length) {
                     start = Math.max(0, end - snippetLength);
                 }
 
                 let snippet = plain.substring(start, end);
 
-                // Add ellipsis if truncated
                 if (start > 0) snippet = '...' + snippet;
                 if (end < plain.length) snippet = snippet + '...';
 
@@ -925,10 +826,9 @@ class DaylioScribe {
             }
         }
 
-        // Default behavior: show title if exists, otherwise note preview
-        let text;
+        let text: string;
         if (hasTitle) {
-            text = entry.note_title.trim();
+            text = entry.note_title!.trim();
         } else {
             const plain = this.htmlToPlainText(entry.note);
             text = plain.length > 60 ? plain.substring(0, 60) + '...' : plain;
@@ -937,11 +837,10 @@ class DaylioScribe {
         return this.highlightText(text, searchTerm);
     }
 
-    selectEntry(index) {
+    private selectEntry(index: number): void {
         this.currentEntryIndex = index;
         const entry = this.entries[index];
 
-        // Update editor
         this.editorPlaceholder.classList.add('hidden');
         this.editor.classList.remove('hidden');
 
@@ -951,50 +850,40 @@ class DaylioScribe {
 
         this.noteTitleInput.value = entry.note_title || '';
 
-        // Load HTML content into Quill using 'silent' to prevent triggering change events
         const cleanHtml = this.daylioToQuillHtml(entry.note || '');
         const delta = this.quill.clipboard.convert({ html: cleanHtml });
         this.quill.setContents(delta, 'silent');
 
-        // Update active state in list
         document.querySelectorAll('.entry-item').forEach(el => {
-            el.classList.toggle('active', parseInt(el.dataset.index) === index);
+            const htmlEl = el as HTMLElement;
+            el.classList.toggle('active', parseInt(htmlEl.dataset.index || '') === index);
         });
 
-        // Load photos
         this.renderPhotos(entry);
     }
 
-    /**
-     * Render photo thumbnails for an entry
-     */
-    renderPhotos(entry) {
-        // Clear previous photos and revoke old URLs
+    private renderPhotos(entry: DayEntry): void {
         this.currentEntryPhotos.forEach(url => URL.revokeObjectURL(url));
         this.photoThumbnails.innerHTML = '';
         this.currentEntryPhotos = [];
 
-        // Get entry asset IDs
         const entryAssetIds = entry.assets || [];
         if (entryAssetIds.length === 0) {
             this.photoSection.classList.add('hidden');
             return;
         }
 
-        // Build asset lookup map if not already built
         if (!this.assetMap) {
             this.assetMap = {};
-            (this.data.assets || []).forEach(asset => {
-                this.assetMap[asset.id] = asset;
+            (this.data?.assets || []).forEach(asset => {
+                this.assetMap![asset.id] = asset;
             });
         }
 
-        // Create thumbnails
         entryAssetIds.forEach((assetId, index) => {
-            const asset = this.assetMap[assetId];
+            const asset = this.assetMap![assetId];
             if (!asset) return;
 
-            // Construct path: assets/photos/YEAR/MONTH/CHECKSUM
             const createdAt = new Date(asset.createdAt);
             const year = createdAt.getFullYear();
             const month = createdAt.getMonth() + 1;
@@ -1013,20 +902,15 @@ class DaylioScribe {
             }
         });
 
-        // Show/hide section based on whether we found any photos
         if (this.currentEntryPhotos.length > 0) {
             this.photoSection.classList.remove('hidden');
-            this.photoCount.textContent = this.currentEntryPhotos.length;
+            this.photoCount.textContent = String(this.currentEntryPhotos.length);
         } else {
             this.photoSection.classList.add('hidden');
         }
     }
 
-    /**
-     * Create a data URL from asset binary data
-     */
-    createImageUrl(data) {
-        // Detect image type from magic bytes
+    private createImageUrl(data: Uint8Array): string {
         let mimeType = 'image/jpeg';
         if (data[0] === 0x89 && data[1] === 0x50) {
             mimeType = 'image/png';
@@ -1038,81 +922,57 @@ class DaylioScribe {
         return URL.createObjectURL(blob);
     }
 
-    /**
-     * Open the photo lightbox at a specific index
-     */
-    openLightbox(index) {
+    private openLightbox(index: number): void {
         if (this.currentEntryPhotos.length === 0) return;
 
         this.currentPhotoIndex = index;
         this.updateLightboxImage();
         this.photoLightbox.classList.remove('hidden');
-        document.body.style.overflow = 'hidden';  // Prevent scrolling
+        document.body.style.overflow = 'hidden';
     }
 
-    /**
-     * Close the photo lightbox
-     */
-    closeLightbox() {
+    private closeLightbox(): void {
         this.photoLightbox.classList.add('hidden');
         document.body.style.overflow = '';
     }
 
-    /**
-     * Show the previous photo in the lightbox
-     */
-    showPrevPhoto() {
+    private showPrevPhoto(): void {
         if (this.currentEntryPhotos.length === 0) return;
         this.currentPhotoIndex = (this.currentPhotoIndex - 1 + this.currentEntryPhotos.length) % this.currentEntryPhotos.length;
         this.updateLightboxImage();
     }
 
-    /**
-     * Show the next photo in the lightbox
-     */
-    showNextPhoto() {
+    private showNextPhoto(): void {
         if (this.currentEntryPhotos.length === 0) return;
         this.currentPhotoIndex = (this.currentPhotoIndex + 1) % this.currentEntryPhotos.length;
         this.updateLightboxImage();
     }
 
-    /**
-     * Update the lightbox image and counter
-     */
-    updateLightboxImage() {
+    private updateLightboxImage(): void {
         this.lightboxImage.src = this.currentEntryPhotos[this.currentPhotoIndex];
         this.lightboxCounter.textContent = `${this.currentPhotoIndex + 1} / ${this.currentEntryPhotos.length}`;
 
-        // Show/hide nav buttons for single photo
         const hasMultiple = this.currentEntryPhotos.length > 1;
         this.lightboxPrev.style.display = hasMultiple ? '' : 'none';
         this.lightboxNext.style.display = hasMultiple ? '' : 'none';
     }
 
-    updateCurrentEntry() {
+    private updateCurrentEntry(): void {
         if (this.currentEntryIndex === null) return;
 
         const entry = this.entries[this.currentEntryIndex];
         entry.note_title = this.noteTitleInput.value;
 
-        // Get HTML from Quill and convert to Daylio format
         const quillHtml = this.quill.root.innerHTML;
         entry.note = this.quillToDaylioHtml(quillHtml);
 
-        // Mark as having unsaved changes
         this.markUnsavedChanges();
-
-        // Update preview in list without resetting scroll
         this.updateEntryPreview(this.currentEntryIndex);
     }
 
-    /**
-     * Update just the preview of a specific entry in the list
-     * Avoids full re-render which would reset scroll position
-     */
-    updateEntryPreview(originalIndex) {
+    private updateEntryPreview(originalIndex: number): void {
         const entryEl = this.entriesList.querySelector(`.entry-item[data-index="${originalIndex}"]`);
-        if (!entryEl) return; // Entry not currently visible
+        if (!entryEl) return;
 
         const entry = this.entries[originalIndex];
         const searchTerm = this.searchInput.value.trim();
@@ -1126,10 +986,7 @@ class DaylioScribe {
         }
     }
 
-    /**
-     * Mark that there are unsaved changes and update UI
-     */
-    markUnsavedChanges() {
+    private markUnsavedChanges(): void {
         if (!this.hasUnsavedChanges) {
             this.hasUnsavedChanges = true;
             this.saveBtn.classList.add('has-changes');
@@ -1137,104 +994,58 @@ class DaylioScribe {
         }
     }
 
-    /**
-     * Clear unsaved changes flag and update UI
-     */
-    clearUnsavedChanges() {
+    private clearUnsavedChanges(): void {
         this.hasUnsavedChanges = false;
         this.saveBtn.classList.remove('has-changes');
         this.saveBtn.textContent = 'Download Backup';
     }
 
-    /**
-     * Convert Daylio HTML to Quill-compatible HTML
-     */
-    daylioToQuillHtml(html) {
+    // HTML conversion methods (duplicated from conversions.ts for class use)
+    private daylioToQuillHtml(html: string): string {
         if (!html) return '';
 
         let result = html;
-
-        // Remove inline styles from spans (keep the tag structure)
         result = result.replace(/<span[^>]*>/gi, '');
         result = result.replace(/<\/span>/gi, '');
-
-        // Remove inline styles from p tags but keep the tag
         result = result.replace(/<p[^>]*>/gi, '<p>');
-
-        // Remove inline styles from li tags but preserve data-list attribute for Quill
-        result = result.replace(/<li([^>]*)>/gi, (match, attrs) => {
+        result = result.replace(/<li([^>]*)>/gi, (_match: string, attrs: string) => {
             const dataListMatch = attrs.match(/data-list="([^"]*)"/);
             if (dataListMatch) {
                 return `<li data-list="${dataListMatch[1]}">`;
             }
             return '<li>';
         });
-
-        // Convert <div><br></div> patterns to <p><br></p> for Quill
         result = result.replace(/<div><br\s*\/?><\/div>/gi, '<p><br></p>');
-
-        // Convert remaining divs to paragraphs
         result = result.replace(/<div>/gi, '<p>');
         result = result.replace(/<\/div>/gi, '</p>');
-
-        // Handle \n in the content
         result = result.replace(/\\n/g, '<br>');
-
-        // Convert <b> to <strong> (Quill uses strong)
         result = result.replace(/<b>/gi, '<strong>');
         result = result.replace(/<\/b>/gi, '</strong>');
-
-        // Convert <i> to <em> (Quill uses em)
         result = result.replace(/<i>/gi, '<em>');
         result = result.replace(/<\/i>/gi, '</em>');
-
-        // Convert <s> or <strike> to <s> (Quill uses s for strikethrough)
         result = result.replace(/<strike>/gi, '<s>');
         result = result.replace(/<\/strike>/gi, '</s>');
-
-        // Remove <font> tags
         result = result.replace(/<font[^>]*>/gi, '');
         result = result.replace(/<\/font>/gi, '');
-
-        // Convert <br> tags to paragraph structure for Quill
-        // Quill drops <br> inside paragraphs, so we must convert them to separate <p> blocks
         result = this.convertBrToQuillParagraphs(result);
-
-        // Clean up empty paragraphs at the start
         result = result.replace(/^(<p><br><\/p>)+/, '');
-
-        // Add data-list attributes for Quill list recognition
         result = this.addQuillListAttributes(result);
 
         return result;
     }
 
-    /**
-     * Convert <br> tags to paragraph structure that Quill understands.
-     * Quill's block model doesn't support <br> inside paragraphs - it silently drops them.
-     * We convert <br> to paragraph breaks so line breaks are preserved.
-     */
-    convertBrToQuillParagraphs(html) {
+    private convertBrToQuillParagraphs(html: string): string {
         if (!html) return html;
 
         let result = html;
-
-        // Step 1: Protect existing <p><br></p> patterns (they're already correct blank lines)
         const BLANK_LINE_PLACEHOLDER = '___BLANK_LINE_PLACEHOLDER___';
         result = result.replace(/<p><br\s*\/?><\/p>/gi, BLANK_LINE_PLACEHOLDER);
-
-        // Step 2: Convert <br><br> (blank line) to empty paragraph
         const BR_PLACEHOLDER = '___BR_PLACEHOLDER___';
         result = result.replace(/<br\s*\/?>\s*<br\s*\/?>/gi, `</p><p>${BR_PLACEHOLDER}</p><p>`);
-
-        // Step 3: Convert remaining single <br> to paragraph break
         result = result.replace(/<br\s*\/?>/gi, '</p><p>');
-
-        // Step 4: Restore placeholders
         result = result.replace(new RegExp(BR_PLACEHOLDER, 'g'), '<br>');
         result = result.replace(new RegExp(BLANK_LINE_PLACEHOLDER, 'g'), '<p><br></p>');
 
-        // Step 5: Wrap leading text in <p> if it doesn't start with a tag
         if (result && !result.startsWith('<')) {
             const firstTagMatch = result.match(/<[^>]+>/);
             if (firstTagMatch) {
@@ -1245,40 +1056,30 @@ class DaylioScribe {
                     result = `<p>${leadingText}</p>${rest}`;
                 }
             } else {
-                // No tags at all - wrap everything
                 result = `<p>${result}</p>`;
             }
         }
 
-        // Step 6: Fix malformed closing/opening tag sequences
         result = result.replace(/<\/p>\s*<\/p>/gi, '</p>');
         result = result.replace(/<p>\s*<p>/gi, '<p>');
-
-        // Step 7: Remove empty paragraphs (but keep <p><br></p> for blank lines)
         result = result.replace(/<p><\/p>/g, '');
 
         return result;
     }
 
-    /**
-     * Add data-list attributes to list items for Quill compatibility
-     * Quill requires data-list="ordered" or data-list="bullet" on <li> elements
-     */
-    addQuillListAttributes(html) {
+    private addQuillListAttributes(html: string): string {
         if (!html) return html;
 
         const parser = new DOMParser();
         const doc = parser.parseFromString('<div>' + html + '</div>', 'text/html');
-        const container = doc.body.firstChild;
+        const container = doc.body.firstChild as HTMLElement;
 
-        // Add data-list="ordered" to li elements inside ol tags
         container.querySelectorAll('ol > li').forEach(li => {
             if (!li.getAttribute('data-list')) {
                 li.setAttribute('data-list', 'ordered');
             }
         });
 
-        // Add data-list="bullet" to li elements inside ul tags
         container.querySelectorAll('ul > li').forEach(li => {
             if (!li.getAttribute('data-list')) {
                 li.setAttribute('data-list', 'bullet');
@@ -1288,69 +1089,39 @@ class DaylioScribe {
         return container.innerHTML;
     }
 
-    /**
-     * Convert Quill HTML back to Daylio-compatible HTML
-     */
-    quillToDaylioHtml(html) {
+    private quillToDaylioHtml(html: string): string {
         if (!html || html === '<p><br></p>') return '';
 
         let result = html;
-
-        // Remove Quill UI artifacts
         result = result.replace(/<span class="ql-ui"[^>]*>.*?<\/span>/gi, '');
-
-        // Convert Quill's list format to standard HTML
-        // Quill uses <ol> for both bullet and numbered lists with data-list attribute
-        // Convert bullet lists: <li data-list="bullet"> within <ol> to <ul><li>
         result = result.replace(/<ol>(\s*<li data-list="bullet">)/gi, '<ul><li>');
         result = result.replace(/<li data-list="bullet">/gi, '<li>');
-        // Fix closing tags for bullet lists that were converted
-        result = result.replace(/<\/li>(\s*)<\/ol>/gi, (match, space, offset) => {
-            // Check if this was a bullet list by looking back
+        result = result.replace(/<\/li>(\s*)<\/ol>/gi, (match: string, space: string, offset: number) => {
             const before = result.substring(0, offset);
             if (before.lastIndexOf('<ul>') > before.lastIndexOf('<ol>')) {
                 return '</li>' + space + '</ul>';
             }
             return match;
         });
-
-        // Handle bullet lists properly with a more robust approach
         result = this.convertQuillLists(result);
-
-        // Convert <strong> to <b>
         result = result.replace(/<strong>/gi, '<b>');
         result = result.replace(/<\/strong>/gi, '</b>');
-
-        // Convert <em> to <i>
         result = result.replace(/<em>/gi, '<i>');
         result = result.replace(/<\/em>/gi, '</i>');
-
-        // Convert paragraphs to divs (Daylio uses divs)
         result = result.replace(/<p>/gi, '<div>');
         result = result.replace(/<\/p>/gi, '</div>');
-
-        // Clean up: Handle empty divs
         result = result.replace(/<div><\/div>/gi, '<div><br></div>');
-
-        // Remove trailing <div><br></div>
         result = result.replace(/(<div><br><\/div>)+$/, '');
-
-        // Remove leading/trailing whitespace
         result = result.trim();
 
         return result;
     }
 
-    /**
-     * Convert Quill's list format to standard HTML lists
-     */
-    convertQuillLists(html) {
-        // Parse and rebuild lists properly
+    private convertQuillLists(html: string): string {
         const parser = new DOMParser();
         const doc = parser.parseFromString('<div>' + html + '</div>', 'text/html');
-        const container = doc.body.firstChild;
+        const container = doc.body.firstChild as HTMLElement;
 
-        // Find all ol elements and convert based on their li children
         const ols = container.querySelectorAll('ol');
         ols.forEach(ol => {
             const items = ol.querySelectorAll('li');
@@ -1359,15 +1130,13 @@ class DaylioScribe {
                 const listType = firstItem.getAttribute('data-list');
 
                 if (listType === 'bullet') {
-                    // Convert to ul
                     const ul = doc.createElement('ul');
                     items.forEach(li => {
                         li.removeAttribute('data-list');
                         ul.appendChild(li.cloneNode(true));
                     });
-                    ol.parentNode.replaceChild(ul, ol);
+                    ol.parentNode?.replaceChild(ul, ol);
                 } else {
-                    // Keep as ol with data-list="ordered" for Quill compatibility
                     items.forEach(li => {
                         li.setAttribute('data-list', 'ordered');
                     });
@@ -1378,58 +1147,30 @@ class DaylioScribe {
         return container.innerHTML;
     }
 
-    /**
-     * Convert HTML note to plain text for preview/search
-     */
-    htmlToPlainText(html) {
+    private htmlToPlainText(html: string): string {
         if (!html) return '';
 
         let text = html;
-
-        // Replace <br> and <br/> with newlines
         text = text.replace(/<br\s*\/?>/gi, '\n');
-
-        // Replace </div><div> patterns with newlines (paragraph breaks)
         text = text.replace(/<\/div>\s*<div>/gi, '\n');
-
-        // Replace closing block tags with newlines
         text = text.replace(/<\/(div|p|li)>/gi, '\n');
-
-        // Replace <li> with bullet point
         text = text.replace(/<li[^>]*>/gi, '• ');
-
-        // Remove all remaining HTML tags
         text = text.replace(/<[^>]+>/g, '');
-
-        // Decode HTML entities
         text = text.replace(/&nbsp;/g, ' ');
         text = text.replace(/&amp;/g, '&');
         text = text.replace(/&lt;/g, '<');
         text = text.replace(/&gt;/g, '>');
         text = text.replace(/&quot;/g, '"');
         text = text.replace(/&#39;/g, "'");
-
-        // Handle escaped newlines from JSON
         text = text.replace(/\\n/g, '\n');
-
-        // Clean up multiple consecutive newlines (max 2)
         text = text.replace(/\n{3,}/g, '\n\n');
-
-        // Trim whitespace
         text = text.trim();
 
         return text;
     }
 
-    /**
-     * Show a toast notification
-     * @param {string} type - 'error', 'success', 'warning', or 'info'
-     * @param {string} title - Toast title
-     * @param {string} message - Toast message (optional)
-     * @param {number} duration - Auto-dismiss duration in ms (0 for no auto-dismiss)
-     */
-    showToast(type, title, message = '', duration = 5000) {
-        const icons = {
+    private showToast(type: ToastType, title: string, message = '', duration = 5000): HTMLElement {
+        const icons: Record<ToastType, string> = {
             error: '✕',
             success: '✓',
             warning: '⚠',
@@ -1447,13 +1188,11 @@ class DaylioScribe {
             <button class="toast-close" aria-label="Close">×</button>
         `;
 
-        // Close button handler
         const closeBtn = toast.querySelector('.toast-close');
-        closeBtn.addEventListener('click', () => this.dismissToast(toast));
+        closeBtn?.addEventListener('click', () => this.dismissToast(toast));
 
         this.toastContainer.appendChild(toast);
 
-        // Auto-dismiss
         if (duration > 0) {
             setTimeout(() => this.dismissToast(toast), duration);
         }
@@ -1461,10 +1200,7 @@ class DaylioScribe {
         return toast;
     }
 
-    /**
-     * Dismiss a toast notification with animation
-     */
-    dismissToast(toast) {
+    private dismissToast(toast: HTMLElement): void {
         if (!toast || !toast.parentNode) return;
 
         toast.classList.add('toast-out');
@@ -1475,36 +1211,25 @@ class DaylioScribe {
         });
     }
 
-    /**
-     * Escape HTML special characters to prevent XSS
-     */
-    escapeHtml(text) {
+    private escapeHtml(text: string): string {
         const div = document.createElement('div');
         div.textContent = text;
         return div.innerHTML;
     }
 
-    /**
-     * Highlight search term in text (case-insensitive)
-     * Returns HTML with <mark> tags around matches
-     */
-    highlightText(text, searchTerm) {
+    private highlightText(text: string, searchTerm: string): string {
         if (!searchTerm || !text) return this.escapeHtml(text);
 
         const escaped = this.escapeHtml(text);
         const escapedTerm = this.escapeHtml(searchTerm);
 
-        // Create case-insensitive regex, escaping regex special chars
         const regexSafe = escapedTerm.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
         const regex = new RegExp(`(${regexSafe})`, 'gi');
 
         return escaped.replace(regex, '<mark>$1</mark>');
     }
 
-    /**
-     * Decode base64 to UTF-8 string
-     */
-    base64DecodeUtf8(base64) {
+    private base64DecodeUtf8(base64: string): string {
         const binaryString = atob(base64);
         const bytes = new Uint8Array(binaryString.length);
         for (let i = 0; i < binaryString.length; i++) {
@@ -1513,10 +1238,7 @@ class DaylioScribe {
         return new TextDecoder('utf-8').decode(bytes);
     }
 
-    /**
-     * Encode UTF-8 string to base64
-     */
-    base64EncodeUtf8(str) {
+    private base64EncodeUtf8(str: string): string {
         const bytes = new TextEncoder().encode(str);
         let binaryString = '';
         for (let i = 0; i < bytes.length; i++) {
@@ -1525,45 +1247,31 @@ class DaylioScribe {
         return btoa(binaryString);
     }
 
-    /**
-     * Save the modified backup as a .daylio file
-     */
-    async saveBackup() {
+    private async saveBackup(): Promise<void> {
         if (!this.data) return;
 
         try {
-            // Update the entries in data
             this.data.dayEntries = this.entries;
 
-            // Convert JSON to string (compact, no pretty printing)
             const jsonString = JSON.stringify(this.data);
-
-            // Encode to base64 (with proper UTF-8 handling)
             const base64Content = this.base64EncodeUtf8(jsonString);
 
-            // Create new ZIP
             const zip = new JSZip();
-
-            // Add the encoded backup.daylio
             zip.file('backup.daylio', base64Content);
 
-            // Add all assets
             for (const [path, content] of Object.entries(this.assets)) {
                 zip.file(path, content);
             }
 
-            // Generate the ZIP file with no compression (store only, like original)
             const blob = await zip.generateAsync({
                 type: 'blob',
                 compression: 'STORE'
             });
 
-            // Download the file
             const url = URL.createObjectURL(blob);
             const a = document.createElement('a');
             a.href = url;
 
-            // Generate filename with current date
             const now = new Date();
             const dateStr = `${now.getFullYear()}_${String(now.getMonth() + 1).padStart(2, '0')}_${String(now.getDate()).padStart(2, '0')}`;
             a.download = `backup_${dateStr}.daylio`;
@@ -1573,99 +1281,74 @@ class DaylioScribe {
             document.body.removeChild(a);
             URL.revokeObjectURL(url);
 
-            // Clear unsaved changes flag
             this.clearUnsavedChanges();
             this.showToast('success', 'Backup Downloaded', 'Your modified backup is ready to import into Daylio.');
         } catch (err) {
-            this.showToast('error', 'Failed to Save Backup', err.message);
+            this.showToast('error', 'Failed to Save Backup', (err as Error).message);
         }
     }
 
-    /**
-     * Export entries as CSV file
-     */
-    exportCsv() {
+    private exportCsv(): void {
         try {
             if (!this.entries || this.entries.length === 0) {
                 this.showToast('warning', 'No Entries', 'Load a backup file first before exporting.');
                 return;
             }
 
-        // CSV header
-        const headers = ['Date', 'Weekday', 'Time', 'Mood', 'Title', 'Note'];
-        const rows = [headers];
+            const headers = ['Date', 'Weekday', 'Time', 'Mood', 'Title', 'Note'];
+            const rows: string[][] = [headers];
 
-        // Weekday names
-        const weekdays = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
+            const weekdays = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
 
-        // Sort entries by date (oldest first for CSV)
-        const sortedEntries = [...this.entries].sort((a, b) => {
-            const dateA = new Date(a.year, a.month, a.day, a.hour, a.minute);
-            const dateB = new Date(b.year, b.month, b.day, b.hour, b.minute);
-            return dateA - dateB;
-        });
+            const sortedEntries = [...this.entries].sort((a, b) => {
+                const dateA = new Date(a.year, a.month, a.day, a.hour, a.minute);
+                const dateB = new Date(b.year, b.month, b.day, b.hour, b.minute);
+                return dateA.getTime() - dateB.getTime();
+            });
 
-        for (const entry of sortedEntries) {
-            // Format date as YYYY-MM-DD
-            const date = `${entry.year}-${String(entry.month + 1).padStart(2, '0')}-${String(entry.day).padStart(2, '0')}`;
+            for (const entry of sortedEntries) {
+                const date = `${entry.year}-${String(entry.month + 1).padStart(2, '0')}-${String(entry.day).padStart(2, '0')}`;
+                const weekday = weekdays[new Date(entry.year, entry.month, entry.day).getDay()];
+                const time = `${String(entry.hour).padStart(2, '0')}:${String(entry.minute).padStart(2, '0')}`;
+                const mood = this.getMoodLabel(entry.mood);
+                const title = entry.note_title || '';
+                const note = this.htmlToPlainText(entry.note || '');
 
-            // Get weekday
-            const weekday = weekdays[new Date(entry.year, entry.month, entry.day).getDay()];
+                rows.push([date, weekday, time, mood, title, note]);
+            }
 
-            // Format time
-            const time = `${String(entry.hour).padStart(2, '0')}:${String(entry.minute).padStart(2, '0')}`;
+            const csv = rows.map(row =>
+                row.map(cell => this.escapeCsvField(cell)).join(',')
+            ).join('\n');
 
-            // Get mood label
-            const mood = this.getMoodLabel(entry.mood);
+            const bom = '\uFEFF';
+            const blob = new Blob([bom + csv], { type: 'text/csv;charset=utf-8' });
 
-            // Get title (or empty)
-            const title = entry.note_title || '';
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
 
-            // Get note as plain text
-            const note = this.htmlToPlainText(entry.note || '');
+            const now = new Date();
+            const dateStr = `${now.getFullYear()}_${String(now.getMonth() + 1).padStart(2, '0')}_${String(now.getDate()).padStart(2, '0')}`;
+            a.download = `daylio_export_${dateStr}.csv`;
 
-            rows.push([date, weekday, time, mood, title, note]);
-        }
+            document.body.appendChild(a);
+            a.click();
+            document.body.removeChild(a);
+            URL.revokeObjectURL(url);
 
-        // Convert to CSV string
-        const csv = rows.map(row =>
-            row.map(cell => this.escapeCsvField(cell)).join(',')
-        ).join('\n');
-
-        // Add BOM for Excel UTF-8 compatibility
-        const bom = '\uFEFF';
-        const blob = new Blob([bom + csv], { type: 'text/csv;charset=utf-8' });
-
-        // Download
-        const url = URL.createObjectURL(blob);
-        const a = document.createElement('a');
-        a.href = url;
-
-        const now = new Date();
-        const dateStr = `${now.getFullYear()}_${String(now.getMonth() + 1).padStart(2, '0')}_${String(now.getDate()).padStart(2, '0')}`;
-        a.download = `daylio_export_${dateStr}.csv`;
-
-        document.body.appendChild(a);
-        a.click();
-        document.body.removeChild(a);
-        URL.revokeObjectURL(url);
-
-        this.showToast('success', 'CSV Exported', `Exported ${this.entries.length} entries to CSV.`);
+            this.showToast('success', 'CSV Exported', `Exported ${this.entries.length} entries to CSV.`);
         } catch (err) {
-            this.showToast('error', 'Failed to Export CSV', err.message);
+            this.showToast('error', 'Failed to Export CSV', (err as Error).message);
             console.error('CSV export error:', err);
         }
     }
 
-    /**
-     * Escape a field for CSV (handle quotes, commas, newlines)
-     */
-    escapeCsvField(field) {
+    private escapeCsvField(field: unknown): string {
         if (field === null || field === undefined) return '';
 
         const str = String(field);
 
-        // If contains comma, quote, or newline, wrap in quotes and escape quotes
         if (str.includes(',') || str.includes('"') || str.includes('\n') || str.includes('\r')) {
             return '"' + str.replace(/"/g, '""') + '"';
         }

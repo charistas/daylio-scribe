@@ -31,6 +31,30 @@ body {
     line-height: 1.6;
 }
 
+/* Screen reader only - visually hidden but accessible */
+.sr-only {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    padding: 0;
+    margin: -1px;
+    overflow: hidden;
+    clip: rect(0, 0, 0, 0);
+    white-space: nowrap;
+    border: 0;
+}
+
+/* Focus styles for keyboard navigation */
+:focus-visible {
+    outline: 2px solid var(--accent);
+    outline-offset: 2px;
+}
+
+/* Remove default outline since we're using focus-visible */
+:focus:not(:focus-visible) {
+    outline: none;
+}
+
 .container {
     max-width: 1400px;
     margin: 0 auto;
@@ -307,6 +331,12 @@ header h1 {
     background: var(--bg-tertiary);
 }
 
+.calendar-day:focus-visible {
+    background: var(--bg-tertiary);
+    outline: 2px solid var(--accent);
+    outline-offset: -2px;
+}
+
 .calendar-day.other-month {
     opacity: 0.3;
 }
@@ -437,6 +467,12 @@ header h1 {
 
 .entry-item:hover {
     background: var(--bg-tertiary);
+}
+
+.entry-item:focus-visible {
+    background: var(--bg-tertiary);
+    outline: 2px solid var(--accent);
+    outline-offset: -2px;
 }
 
 .entry-item.active {
@@ -748,6 +784,11 @@ emoji-picker {
 .photo-thumbnail:hover {
     border-color: var(--accent);
     transform: scale(1.05);
+}
+
+.photo-thumbnail:focus-visible {
+    border-color: var(--accent);
+    outline: none;
 }
 
 .photo-thumbnail img {

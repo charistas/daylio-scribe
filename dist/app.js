@@ -22,6 +22,7 @@
       // Photo gallery state
       this.currentEntryPhotos = [];
       this.currentPhotoIndex = 0;
+      this.lightboxTrigger = null;
       // Virtual scrolling state
       this.itemHeight = 73;
       this.bufferSize = 5;
@@ -39,6 +40,22 @@
       // ZIP storage
       this.originalZip = null;
       this.assets = {};
+      this.handleLightboxKeydown = (e) => {
+        if (e.key === "Tab") {
+          const focusableEls = this.photoLightbox.querySelectorAll(
+            'button:not([disabled]), [tabindex]:not([tabindex="-1"])'
+          );
+          const firstEl = focusableEls[0];
+          const lastEl = focusableEls[focusableEls.length - 1];
+          if (e.shiftKey && document.activeElement === firstEl) {
+            e.preventDefault();
+            lastEl.focus();
+          } else if (!e.shiftKey && document.activeElement === lastEl) {
+            e.preventDefault();
+            firstEl.focus();
+          }
+        }
+      };
       this.initElements();
       this.initQuill();
       this.bindEvents();
@@ -133,6 +150,13 @@
     initEmojiPicker() {
       this.emojiPickerPopup = document.getElementById("emojiPickerPopup");
       this.emojiPicker = document.querySelector("emoji-picker");
+      setTimeout(() => {
+        const emojiBtn = document.querySelector(".ql-emoji");
+        if (emojiBtn) {
+          emojiBtn.setAttribute("aria-label", "Insert emoji");
+          emojiBtn.setAttribute("title", "Insert emoji");
+        }
+      }, 100);
       this.emojiPicker.addEventListener("emoji-click", (event) => {
         const emoji = event.detail.unicode;
         this.insertEmoji(emoji);
@@ -145,6 +169,13 @@
           if (!isClickInside) {
             this.hideEmojiPicker();
           }
+        }
+      });
+      document.addEventListener("keydown", (event) => {
+        if (event.key === "Escape" && !this.emojiPickerPopup.classList.contains("hidden")) {
+          this.hideEmojiPicker();
+          const emojiBtn = document.querySelector(".ql-emoji");
+          emojiBtn?.focus();
         }
       });
     }
@@ -474,17 +505,34 @@ Do you want to continue anyway?`
       const cell = document.createElement("div");
       cell.className = "calendar-day";
       cell.textContent = String(date.getDate());
+      cell.setAttribute("role", "button");
+      const monthNames = [
+        "January",
+        "February",
+        "March",
+        "April",
+        "May",
+        "June",
+        "July",
+        "August",
+        "September",
+        "October",
+        "November",
+        "December"
+      ];
+      const fullDate = `${monthNames[date.getMonth()]} ${date.getDate()}, ${date.getFullYear()}`;
       if (isOtherMonth) {
         cell.classList.add("other-month");
       }
       if (isToday) {
         cell.classList.add("today");
       }
-      if (this.selectedCalendarDate) {
-        const selDate = this.selectedCalendarDate;
-        if (date.getFullYear() === selDate.getFullYear() && date.getMonth() === selDate.getMonth() && date.getDate() === selDate.getDate()) {
-          cell.classList.add("selected");
-        }
+      const isSelected = this.selectedCalendarDate && date.getFullYear() === this.selectedCalendarDate.getFullYear() && date.getMonth() === this.selectedCalendarDate.getMonth() && date.getDate() === this.selectedCalendarDate.getDate();
+      if (isSelected) {
+        cell.classList.add("selected");
+        cell.setAttribute("aria-pressed", "true");
+      } else {
+        cell.setAttribute("aria-pressed", "false");
       }
       const today = /* @__PURE__ */ new Date();
       today.setHours(0, 0, 0, 0);
@@ -493,10 +541,14 @@ Do you want to continue anyway?`
       const isFuture = cellDate > today;
       if (isFuture) {
         cell.classList.add("future");
+        cell.setAttribute("aria-disabled", "true");
+        cell.setAttribute("aria-label", `${fullDate}, future date`);
         return cell;
       }
+      cell.setAttribute("tabindex", "0");
       const dateKey = `${date.getFullYear()}-${date.getMonth()}-${date.getDate()}`;
       const dayEntries = entriesMap[dateKey];
+      let ariaLabel = fullDate;
       if (dayEntries && dayEntries.length > 0) {
         cell.classList.add("has-entry");
         const moodGroupId = this.getMoodGroupId(dayEntries[0].mood);
@@ -508,8 +560,18 @@ Do you want to continue anyway?`
           5: "#e94560"
         };
         cell.style.setProperty("--mood-color", moodColors[moodGroupId] || "#a0a0a0");
+        ariaLabel += `, ${dayEntries.length} ${dayEntries.length === 1 ? "entry" : "entries"}`;
       }
+      if (isToday) ariaLabel += ", today";
+      if (isSelected) ariaLabel += ", selected";
+      cell.setAttribute("aria-label", ariaLabel);
       cell.addEventListener("click", () => this.handleCalendarDayClick(date));
+      cell.addEventListener("keydown", (e) => {
+        if (e.key === "Enter" || e.key === " ") {
+          e.preventDefault();
+          this.handleCalendarDayClick(date);
+        }
+      });
       return cell;
     }
     buildEntriesMap() {
@@ -544,6 +606,58 @@ Do you want to continue anyway?`
     }
     initVirtualScroll() {
       this.entriesList.addEventListener("scroll", () => this.handleScroll());
+      this.entriesList.setAttribute("role", "listbox");
+      this.entriesList.setAttribute("aria-label", "Journal entries");
+      this.entriesList.addEventListener("keydown", (e) => this.handleEntryListKeydown(e));
+    }
+    handleEntryListKeydown(e) {
+      const focusedEl = document.activeElement;
+      if (!focusedEl?.classList.contains("entry-item")) return;
+      const currentIndex = parseInt(focusedEl.dataset.virtualIndex || "0");
+      let nextIndex = null;
+      switch (e.key) {
+        case "ArrowDown":
+          e.preventDefault();
+          nextIndex = Math.min(currentIndex + 1, this.filteredEntries.length - 1);
+          break;
+        case "ArrowUp":
+          e.preventDefault();
+          nextIndex = Math.max(currentIndex - 1, 0);
+          break;
+        case "Enter":
+        case " ":
+          e.preventDefault();
+          const originalIndex = parseInt(focusedEl.dataset.index || "0");
+          this.selectEntry(originalIndex);
+          return;
+        case "Home":
+          e.preventDefault();
+          nextIndex = 0;
+          break;
+        case "End":
+          e.preventDefault();
+          nextIndex = this.filteredEntries.length - 1;
+          break;
+        default:
+          return;
+      }
+      if (nextIndex !== null && nextIndex !== currentIndex) {
+        this.scrollToEntry(nextIndex);
+        requestAnimationFrame(() => {
+          const nextEl = this.entriesList.querySelector(`.entry-item[data-virtual-index="${nextIndex}"]`);
+          nextEl?.focus();
+        });
+      }
+    }
+    scrollToEntry(virtualIndex) {
+      const targetScrollTop = virtualIndex * this.itemHeight;
+      const containerHeight = this.entriesList.clientHeight;
+      const currentScrollTop = this.entriesList.scrollTop;
+      if (targetScrollTop < currentScrollTop) {
+        this.entriesList.scrollTop = targetScrollTop;
+      } else if (targetScrollTop + this.itemHeight > currentScrollTop + containerHeight) {
+        this.entriesList.scrollTop = targetScrollTop - containerHeight + this.itemHeight;
+      }
     }
     handleScroll() {
       if (this.scrollRAF) return;
@@ -585,21 +699,31 @@ Do you want to continue anyway?`
         div.className = "entry-item";
         div.dataset.index = String(originalIndex);
         div.dataset.virtualIndex = String(i);
-        if (originalIndex === this.currentEntryIndex) {
+        div.setAttribute("role", "option");
+        div.setAttribute("tabindex", "0");
+        const isActive = originalIndex === this.currentEntryIndex;
+        if (isActive) {
           div.classList.add("active");
+          div.setAttribute("aria-selected", "true");
+        } else {
+          div.setAttribute("aria-selected", "false");
         }
         const date = this.formatDate(entry);
         const preview = this.getPreview(entry, searchTerm);
         const moodGroupId = this.getMoodGroupId(entry.mood);
         const moodClass = `mood-${moodGroupId}`;
         const moodLabel = this.getMoodLabel(entry.mood);
+        const plainPreview = this.htmlToPlainText(entry.note || "").substring(0, 50);
+        const ariaLabel = `${date}, ${moodLabel}${plainPreview ? ", " + plainPreview : ""}`;
+        div.setAttribute("aria-label", ariaLabel);
         const hasContent = entry.note_title?.trim() || entry.note;
         const hasPhotos = entry.assets && entry.assets.length > 0;
-        const photoIcon = hasPhotos ? '<span class="photo-icon" title="Has photos">\u{1F4F7}</span>' : "";
+        const photoIcon = hasPhotos ? '<span class="photo-icon" aria-hidden="true">\u{1F4F7}</span>' : "";
+        const photoSrText = hasPhotos ? '<span class="sr-only">, has photos</span>' : "";
         div.innerHTML = `
                 <div class="entry-header">
                     <span class="entry-date">${date}</span>
-                    ${photoIcon}
+                    ${photoIcon}${photoSrText}
                     <span class="mood-badge ${moodClass}">${moodLabel}</span>
                 </div>
                 <div class="${hasContent ? "entry-preview" : "entry-no-note"}">${preview}</div>
@@ -744,14 +868,22 @@ Do you want to continue anyway?`
     }
     openLightbox(index) {
       if (this.currentEntryPhotos.length === 0) return;
+      this.lightboxTrigger = document.activeElement;
       this.currentPhotoIndex = index;
       this.updateLightboxImage();
       this.photoLightbox.classList.remove("hidden");
       document.body.style.overflow = "hidden";
+      this.lightboxClose.focus();
+      this.photoLightbox.addEventListener("keydown", this.handleLightboxKeydown);
     }
     closeLightbox() {
       this.photoLightbox.classList.add("hidden");
       document.body.style.overflow = "";
+      this.photoLightbox.removeEventListener("keydown", this.handleLightboxKeydown);
+      if (this.lightboxTrigger) {
+        this.lightboxTrigger.focus();
+        this.lightboxTrigger = null;
+      }
     }
     showPrevPhoto() {
       if (this.currentEntryPhotos.length === 0) return;

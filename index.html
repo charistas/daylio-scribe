@@ -9,7 +9,7 @@
 </head>
 <body>
     <!-- Toast notification container -->
-    <div id="toastContainer" class="toast-container"></div>
+    <div id="toastContainer" class="toast-container" role="status" aria-live="polite" aria-atomic="true"></div>
 
     <div class="container">
         <header>
@@ -52,20 +52,20 @@
                 <div class="entries-panel">
                     <div class="mini-calendar" id="miniCalendar">
                         <div class="calendar-header">
-                            <button class="calendar-nav" id="prevMonth">◀</button>
+                            <button class="calendar-nav" id="prevMonth" aria-label="Previous month">◀</button>
                             <span class="calendar-title" id="calendarTitle">December 2024</span>
-                            <button class="calendar-nav" id="nextMonth">▶</button>
+                            <button class="calendar-nav" id="nextMonth" aria-label="Next month">▶</button>
                         </div>
-                        <div class="calendar-weekdays">
+                        <div class="calendar-weekdays" aria-hidden="true">
                             <span>Mo</span><span>Tu</span><span>We</span><span>Th</span><span>Fr</span><span>Sa</span><span>Su</span>
                         </div>
-                        <div class="calendar-grid" id="calendarGrid"></div>
+                        <div class="calendar-grid" id="calendarGrid" role="grid" aria-label="Calendar"></div>
                     </div>
                     <div class="search-box">
-                        <input type="text" id="searchInput" placeholder="Search notes...">
+                        <input type="text" id="searchInput" placeholder="Search notes..." aria-label="Search notes">
                     </div>
                     <div class="date-filter">
-                        <select id="dateRangeSelect">
+                        <select id="dateRangeSelect" aria-label="Date range filter">
                             <option value="all">All Time</option>
                             <option value="thisMonth">This Month</option>
                             <option value="last30">Last 30 Days</option>
@@ -75,9 +75,9 @@
                             <option value="custom">Custom Range...</option>
                         </select>
                         <div id="customDateRange" class="custom-date-range hidden">
-                            <input type="date" id="dateFrom" title="From date">
-                            <span>to</span>
-                            <input type="date" id="dateTo" title="To date">
+                            <input type="date" id="dateFrom" aria-label="From date">
+                            <span aria-hidden="true">to</span>
+                            <input type="date" id="dateTo" aria-label="To date">
                         </div>
                     </div>
                     <div id="entriesList" class="entries-list"></div>
@@ -119,14 +119,14 @@
     </div>
 
     <!-- Photo lightbox -->
-    <div id="photoLightbox" class="photo-lightbox hidden">
+    <div id="photoLightbox" class="photo-lightbox hidden" role="dialog" aria-modal="true" aria-label="Photo viewer">
         <div class="lightbox-overlay"></div>
         <div class="lightbox-content">
-            <button class="lightbox-close" id="lightboxClose">&times;</button>
-            <button class="lightbox-nav lightbox-prev" id="lightboxPrev">&#10094;</button>
+            <button class="lightbox-close" id="lightboxClose" aria-label="Close photo viewer">&times;</button>
+            <button class="lightbox-nav lightbox-prev" id="lightboxPrev" aria-label="Previous photo">&#10094;</button>
             <img id="lightboxImage" src="" alt="Photo">
-            <button class="lightbox-nav lightbox-next" id="lightboxNext">&#10095;</button>
-            <div class="lightbox-counter" id="lightboxCounter">1 / 1</div>
+            <button class="lightbox-nav lightbox-next" id="lightboxNext" aria-label="Next photo">&#10095;</button>
+            <div class="lightbox-counter" id="lightboxCounter" aria-live="polite">1 / 1</div>
         </div>
     </div>
 

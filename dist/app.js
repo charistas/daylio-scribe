@@ -678,6 +678,10 @@ Do you want to continue anyway?`
           e.preventDefault();
           nextIndex = this.filteredEntries.length - 1;
           break;
+        case "Escape":
+          e.preventDefault();
+          this.deselectEntry();
+          return;
         default:
           return;
       }
@@ -860,8 +864,35 @@ Do you want to continue anyway?`
       document.querySelectorAll(".entry-item").forEach((el) => {
         const htmlEl = el;
         el.classList.toggle("active", parseInt(htmlEl.dataset.index || "") === index);
+        htmlEl.setAttribute("aria-selected", parseInt(htmlEl.dataset.index || "") === index ? "true" : "false");
       });
+      this.announceToScreenReader(`Selected entry: ${this.formatDate(entry)}, ${this.getMoodLabel(entry.mood)}`);
       this.renderPhotos(entry);
+    }
+    deselectEntry() {
+      this.currentEntryIndex = -1;
+      this.editor.classList.add("hidden");
+      this.editorPlaceholder.classList.remove("hidden");
+      document.querySelectorAll(".entry-item").forEach((el) => {
+        el.classList.remove("active");
+        el.setAttribute("aria-selected", "false");
+      });
+      this.announceToScreenReader("Entry deselected");
+    }
+    announceToScreenReader(message) {
+      let liveRegion = document.getElementById("srAnnouncer");
+      if (!liveRegion) {
+        liveRegion = document.createElement("div");
+        liveRegion.id = "srAnnouncer";
+        liveRegion.className = "sr-only";
+        liveRegion.setAttribute("aria-live", "polite");
+        liveRegion.setAttribute("aria-atomic", "true");
+        document.body.appendChild(liveRegion);
+      }
+      liveRegion.textContent = "";
+      setTimeout(() => {
+        liveRegion.textContent = message;
+      }, 100);
     }
     renderPhotos(entry) {
       this.currentEntryPhotos.forEach((url) => URL.revokeObjectURL(url));

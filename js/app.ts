@@ -818,6 +818,10 @@ class DaylioScribe {
                 e.preventDefault();
                 nextIndex = this.filteredEntries.length - 1;
                 break;
+            case 'Escape':
+                e.preventDefault();
+                this.deselectEntry();
+                return;
             default:
                 return;
         }
@@ -1045,9 +1049,44 @@ class DaylioScribe {
         document.querySelectorAll('.entry-item').forEach(el => {
             const htmlEl = el as HTMLElement;
             el.classList.toggle('active', parseInt(htmlEl.dataset.index || '') === index);
+            htmlEl.setAttribute('aria-selected', parseInt(htmlEl.dataset.index || '') === index ? 'true' : 'false');
         });
 
+        // Announce to screen readers
+        this.announceToScreenReader(`Selected entry: ${this.formatDate(entry)}, ${this.getMoodLabel(entry.mood)}`);
+
         this.renderPhotos(entry);
+    }
+
+    private deselectEntry(): void {
+        this.currentEntryIndex = -1;
+        this.editor.classList.add('hidden');
+        this.editorPlaceholder.classList.remove('hidden');
+
+        document.querySelectorAll('.entry-item').forEach(el => {
+            el.classList.remove('active');
+            el.setAttribute('aria-selected', 'false');
+        });
+
+        this.announceToScreenReader('Entry deselected');
+    }
+
+    private announceToScreenReader(message: string): void {
+        // Use a visually hidden live region to announce to screen readers
+        let liveRegion = document.getElementById('srAnnouncer');
+        if (!liveRegion) {
+            liveRegion = document.createElement('div');
+            liveRegion.id = 'srAnnouncer';
+            liveRegion.className = 'sr-only';
+            liveRegion.setAttribute('aria-live', 'polite');
+            liveRegion.setAttribute('aria-atomic', 'true');
+            document.body.appendChild(liveRegion);
+        }
+        // Clear and set to trigger announcement
+        liveRegion.textContent = '';
+        setTimeout(() => {
+            liveRegion!.textContent = message;
+        }, 100);
     }
 
     private renderPhotos(entry: DayEntry): void {

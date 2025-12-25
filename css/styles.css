@@ -27,7 +27,7 @@ body {
     font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, sans-serif;
     background: var(--bg-primary);
     color: var(--text-primary);
-    min-height: 100vh;
+    height: 100vh;
     line-height: 1.6;
 }
 
@@ -119,7 +119,7 @@ header h1 {
 .app {
     display: flex;
     flex-direction: column;
-    height: calc(100vh - 140px);
+    min-height: calc(100vh - 140px);
 }
 
 .hidden {
@@ -256,7 +256,8 @@ header h1 {
     flex-direction: column;
     background: var(--bg-secondary);
     border-radius: 8px;
-    overflow: hidden;
+    overflow-y: auto;
+    contain: strict;
 }
 
 /* Mini Calendar */
@@ -444,7 +445,6 @@ header h1 {
 
 .entries-list {
     flex: 1;
-    overflow-y: auto;
     padding: 10px;
 }
 

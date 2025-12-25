@@ -78,6 +78,7 @@
       this.dateFrom = document.getElementById("dateFrom");
       this.dateTo = document.getElementById("dateTo");
       this.entriesList = document.getElementById("entriesList");
+      this.entriesPanel = this.entriesList.parentElement;
       this.miniCalendar = document.getElementById("miniCalendar");
       this.calendarTitle = document.getElementById("calendarTitle");
       this.calendarGrid = document.getElementById("calendarGrid");
@@ -644,7 +645,7 @@ Do you want to continue anyway?`
       this.applyFilters();
     }
     initVirtualScroll() {
-      this.entriesList.addEventListener("scroll", () => this.handleScroll());
+      this.entriesPanel.addEventListener("scroll", () => this.handleScroll());
       this.entriesList.setAttribute("role", "listbox");
       this.entriesList.setAttribute("aria-label", "Journal entries");
       this.entriesList.addEventListener("keydown", (e) => this.handleEntryListKeydown(e));
@@ -689,13 +690,14 @@ Do you want to continue anyway?`
       }
     }
     scrollToEntry(virtualIndex) {
-      const targetScrollTop = virtualIndex * this.itemHeight;
-      const containerHeight = this.entriesList.clientHeight;
-      const currentScrollTop = this.entriesList.scrollTop;
+      const entriesListOffset = this.entriesList.offsetTop;
+      const targetScrollTop = entriesListOffset + virtualIndex * this.itemHeight;
+      const containerHeight = this.entriesPanel.clientHeight;
+      const currentScrollTop = this.entriesPanel.scrollTop;
       if (targetScrollTop < currentScrollTop) {
-        this.entriesList.scrollTop = targetScrollTop;
+        this.entriesPanel.scrollTop = targetScrollTop;
       } else if (targetScrollTop + this.itemHeight > currentScrollTop + containerHeight) {
-        this.entriesList.scrollTop = targetScrollTop - containerHeight + this.itemHeight;
+        this.entriesPanel.scrollTop = targetScrollTop - containerHeight + this.itemHeight;
       }
     }
     handleScroll() {
@@ -706,11 +708,15 @@ Do you want to continue anyway?`
       });
     }
     calculateVisibleRange() {
-      const scrollTop = this.entriesList.scrollTop;
-      const containerHeight = this.entriesList.clientHeight;
+      const panelScrollTop = this.entriesPanel.scrollTop;
+      const entriesListOffset = this.entriesList.offsetTop;
+      const panelHeight = this.entriesPanel.clientHeight;
       const totalItems = this.filteredEntries.length;
-      const visibleStart = Math.floor(scrollTop / this.itemHeight);
-      const visibleCount = Math.ceil(containerHeight / this.itemHeight);
+      const effectiveScrollTop = Math.max(0, panelScrollTop - entriesListOffset);
+      const visibleTop = Math.max(0, entriesListOffset - panelScrollTop);
+      const visibleHeight = panelHeight - visibleTop;
+      const visibleStart = Math.floor(effectiveScrollTop / this.itemHeight);
+      const visibleCount = Math.ceil(visibleHeight / this.itemHeight);
       const visibleEnd = Math.min(visibleStart + visibleCount, totalItems);
       const bufferedStart = Math.max(0, visibleStart - this.bufferSize);
       const bufferedEnd = Math.min(totalItems, visibleEnd + this.bufferSize);
@@ -783,7 +789,7 @@ Do you want to continue anyway?`
     renderEntries() {
       this.lastVisibleStart = -1;
       this.lastVisibleEnd = -1;
-      this.entriesList.scrollTop = 0;
+      this.entriesPanel.scrollTop = 0;
       this.renderVirtualEntries(true);
     }
     formatDate(entry) {

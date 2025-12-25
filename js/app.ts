@@ -73,6 +73,7 @@ class DaylioScribe {
     private dateFrom!: HTMLInputElement;
     private dateTo!: HTMLInputElement;
     private entriesList!: HTMLElement;
+    private entriesPanel!: HTMLElement;
     private miniCalendar!: HTMLElement;
     private calendarTitle!: HTMLElement;
     private calendarGrid!: HTMLElement;
@@ -120,6 +121,7 @@ class DaylioScribe {
         this.dateFrom = document.getElementById('dateFrom') as HTMLInputElement;
         this.dateTo = document.getElementById('dateTo') as HTMLInputElement;
         this.entriesList = document.getElementById('entriesList')!;
+        this.entriesPanel = this.entriesList.parentElement!;
         this.miniCalendar = document.getElementById('miniCalendar')!;
         this.calendarTitle = document.getElementById('calendarTitle')!;
         this.calendarGrid = document.getElementById('calendarGrid')!;
@@ -776,7 +778,7 @@ class DaylioScribe {
     }
 
     private initVirtualScroll(): void {
-        this.entriesList.addEventListener('scroll', () => this.handleScroll());
+        this.entriesPanel.addEventListener('scroll', () => this.handleScroll());
 
         // Accessibility: Set up listbox role
         this.entriesList.setAttribute('role', 'listbox');
@@ -831,15 +833,16 @@ class DaylioScribe {
     }
 
     private scrollToEntry(virtualIndex: number): void {
-        const targetScrollTop = virtualIndex * this.itemHeight;
-        const containerHeight = this.entriesList.clientHeight;
-        const currentScrollTop = this.entriesList.scrollTop;
+        const entriesListOffset = this.entriesList.offsetTop;
+        const targetScrollTop = entriesListOffset + (virtualIndex * this.itemHeight);
+        const containerHeight = this.entriesPanel.clientHeight;
+        const currentScrollTop = this.entriesPanel.scrollTop;
 
         // Scroll if the target is outside visible area
         if (targetScrollTop < currentScrollTop) {
-            this.entriesList.scrollTop = targetScrollTop;
+            this.entriesPanel.scrollTop = targetScrollTop;
         } else if (targetScrollTop + this.itemHeight > currentScrollTop + containerHeight) {
-            this.entriesList.scrollTop = targetScrollTop - containerHeight + this.itemHeight;
+            this.entriesPanel.scrollTop = targetScrollTop - containerHeight + this.itemHeight;
         }
     }
 
@@ -853,12 +856,20 @@ class DaylioScribe {
     }
 
     private calculateVisibleRange(): VisibleRange {
-        const scrollTop = this.entriesList.scrollTop;
-        const containerHeight = this.entriesList.clientHeight;
+        const panelScrollTop = this.entriesPanel.scrollTop;
+        const entriesListOffset = this.entriesList.offsetTop;
+        const panelHeight = this.entriesPanel.clientHeight;
         const totalItems = this.filteredEntries.length;
 
-        const visibleStart = Math.floor(scrollTop / this.itemHeight);
-        const visibleCount = Math.ceil(containerHeight / this.itemHeight);
+        // Calculate effective scroll position relative to entries list
+        const effectiveScrollTop = Math.max(0, panelScrollTop - entriesListOffset);
+
+        // Calculate visible height (accounting for calendar/filters when not scrolled)
+        const visibleTop = Math.max(0, entriesListOffset - panelScrollTop);
+        const visibleHeight = panelHeight - visibleTop;
+
+        const visibleStart = Math.floor(effectiveScrollTop / this.itemHeight);
+        const visibleCount = Math.ceil(visibleHeight / this.itemHeight);
         const visibleEnd = Math.min(visibleStart + visibleCount, totalItems);
 
         const bufferedStart = Math.max(0, visibleStart - this.bufferSize);
@@ -953,7 +964,7 @@ class DaylioScribe {
     private renderEntries(): void {
         this.lastVisibleStart = -1;
         this.lastVisibleEnd = -1;
-        this.entriesList.scrollTop = 0;
+        this.entriesPanel.scrollTop = 0;
         this.renderVirtualEntries(true);
     }
 

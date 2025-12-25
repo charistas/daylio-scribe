@@ -1,5 +1,7 @@
 # Daylio Scribe
 
+[![Tests](https://github.com/charistas/daylio-scribe/actions/workflows/test.yml/badge.svg)](https://github.com/charistas/daylio-scribe/actions/workflows/test.yml)
+
 A local web app for editing Daylio journal notes with a human-friendly interface.
 
 ## Features

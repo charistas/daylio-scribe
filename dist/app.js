@@ -16,6 +16,8 @@
       this.isUpdating = false;
       this.hasUnsavedChanges = false;
       this.savedSelection = null;
+      // Original entry states for revert (keyed by entry index)
+      this.originalEntryStates = /* @__PURE__ */ new Map();
       // Calendar state
       this.calendarDate = /* @__PURE__ */ new Date();
       this.selectedCalendarDate = null;
@@ -88,6 +90,7 @@
       this.editorDate = document.getElementById("editorDate");
       this.editorMood = document.getElementById("editorMood");
       this.noteTitleInput = document.getElementById("noteTitleInput");
+      this.revertBtn = document.getElementById("revertBtn");
       this.photoSection = document.getElementById("photoSection");
       this.photoCount = document.getElementById("photoCount");
       this.photoThumbnails = document.getElementById("photoThumbnails");
@@ -105,12 +108,15 @@
         modules: {
           toolbar: {
             container: [
+              ["undo", "redo"],
               ["bold", "italic", "underline", "strike"],
               [{ "list": "ordered" }, { "list": "bullet" }],
               ["emoji"]
             ],
             handlers: {
-              "emoji": () => this.toggleEmojiPicker()
+              "emoji": () => this.toggleEmojiPicker(),
+              "undo": () => this.quill.history.undo(),
+              "redo": () => this.quill.history.redo()
             }
           },
           keyboard: {
@@ -155,6 +161,16 @@
         if (emojiBtn) {
           emojiBtn.setAttribute("aria-label", "Insert emoji");
           emojiBtn.setAttribute("title", "Insert emoji");
+        }
+        const undoBtn = document.querySelector(".ql-undo");
+        if (undoBtn) {
+          undoBtn.setAttribute("aria-label", "Undo");
+          undoBtn.setAttribute("title", "Undo (Ctrl+Z)");
+        }
+        const redoBtn = document.querySelector(".ql-redo");
+        if (redoBtn) {
+          redoBtn.setAttribute("aria-label", "Redo");
+          redoBtn.setAttribute("title", "Redo (Ctrl+Shift+Z)");
         }
       }, 100);
       this.emojiPicker.addEventListener("emoji-click", (event) => {
@@ -262,6 +278,7 @@
         }
       });
       this.noteTitleInput.addEventListener("input", () => this.updateCurrentEntry());
+      this.revertBtn.addEventListener("click", () => this.revertEntry());
       window.addEventListener("beforeunload", (e) => {
         if (this.hasUnsavedChanges) {
           e.preventDefault();
@@ -299,6 +316,7 @@
           return;
         }
         this.entries = this.data.dayEntries || [];
+        this.storeOriginalEntryStates();
         this.buildMoodLabels();
         this.showApp();
       } catch (err) {
@@ -363,6 +381,27 @@ Do you want to continue anyway?`
           groupId: mood.mood_group_id
         };
       }
+    }
+    storeOriginalEntryStates() {
+      this.originalEntryStates.clear();
+      for (let i = 0; i < this.entries.length; i++) {
+        const entry = this.entries[i];
+        this.originalEntryStates.set(i, {
+          note: entry.note || "",
+          note_title: entry.note_title || ""
+        });
+      }
+    }
+    hasAnyChanges() {
+      for (let i = 0; i < this.entries.length; i++) {
+        const entry = this.entries[i];
+        const original = this.originalEntryStates.get(i);
+        if (!original) continue;
+        if (entry.note !== original.note || entry.note_title !== original.note_title) {
+          return true;
+        }
+      }
+      return false;
     }
     getMoodLabel(moodId) {
       return this.moods[moodId]?.label || `mood ${moodId}`;
@@ -810,6 +849,8 @@ Do you want to continue anyway?`
       const cleanHtml = this.daylioToQuillHtml(entry.note || "");
       const delta = this.quill.clipboard.convert({ html: cleanHtml });
       this.quill.setContents(delta, "silent");
+      this.quill.history.clear();
+      this.revertBtn.classList.add("hidden");
       document.querySelectorAll(".entry-item").forEach((el) => {
         const htmlEl = el;
         el.classList.toggle("active", parseInt(htmlEl.dataset.index || "") === index);
@@ -910,6 +951,30 @@ Do you want to continue anyway?`
       entry.note = this.quillToDaylioHtml(quillHtml);
       this.markUnsavedChanges();
       this.updateEntryPreview(this.currentEntryIndex);
+      const original = this.originalEntryStates.get(this.currentEntryIndex);
+      if (original) {
+        const hasChanges = entry.note !== original.note || entry.note_title !== original.note_title;
+        this.revertBtn.classList.toggle("hidden", !hasChanges);
+      }
+    }
+    revertEntry() {
+      if (this.currentEntryIndex === null) return;
+      const original = this.originalEntryStates.get(this.currentEntryIndex);
+      if (!original) return;
+      const entry = this.entries[this.currentEntryIndex];
+      entry.note = original.note;
+      entry.note_title = original.note_title;
+      this.noteTitleInput.value = entry.note_title;
+      const cleanHtml = this.daylioToQuillHtml(entry.note);
+      const delta = this.quill.clipboard.convert({ html: cleanHtml });
+      this.quill.setContents(delta, "silent");
+      this.quill.history.clear();
+      this.updateEntryPreview(this.currentEntryIndex);
+      this.revertBtn.classList.add("hidden");
+      if (!this.hasAnyChanges()) {
+        this.clearUnsavedChanges();
+      }
+      this.showToast("info", "Entry Reverted", "Entry restored to its original state.");
     }
     updateEntryPreview(originalIndex) {
       const entryEl = this.entriesList.querySelector(`.entry-item[data-index="${originalIndex}"]`);

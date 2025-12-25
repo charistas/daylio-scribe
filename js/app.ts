@@ -26,6 +26,9 @@ class DaylioScribe {
     private hasUnsavedChanges = false;
     private savedSelection: any = null;
 
+    // Original entry states for revert (keyed by entry index)
+    private originalEntryStates: Map<number, { note: string; note_title: string }> = new Map();
+
     // Calendar state
     private calendarDate = new Date();
     private selectedCalendarDate: Date | null = null;
@@ -82,6 +85,7 @@ class DaylioScribe {
     private editorDate!: HTMLElement;
     private editorMood!: HTMLElement;
     private noteTitleInput!: HTMLInputElement;
+    private revertBtn!: HTMLButtonElement;
     private photoSection!: HTMLElement;
     private photoCount!: HTMLElement;
     private photoThumbnails!: HTMLElement;
@@ -128,6 +132,7 @@ class DaylioScribe {
         this.editorDate = document.getElementById('editorDate')!;
         this.editorMood = document.getElementById('editorMood')!;
         this.noteTitleInput = document.getElementById('noteTitleInput') as HTMLInputElement;
+        this.revertBtn = document.getElementById('revertBtn') as HTMLButtonElement;
         this.photoSection = document.getElementById('photoSection')!;
         this.photoCount = document.getElementById('photoCount')!;
         this.photoThumbnails = document.getElementById('photoThumbnails')!;
@@ -146,12 +151,15 @@ class DaylioScribe {
             modules: {
                 toolbar: {
                     container: [
+                        ['undo', 'redo'],
                         ['bold', 'italic', 'underline', 'strike'],
                         [{ 'list': 'ordered'}, { 'list': 'bullet' }],
                         ['emoji']
                     ],
                     handlers: {
-                        'emoji': () => this.toggleEmojiPicker()
+                        'emoji': () => this.toggleEmojiPicker(),
+                        'undo': () => this.quill.history.undo(),
+                        'redo': () => this.quill.history.redo()
                     }
                 },
                 keyboard: {
@@ -195,12 +203,22 @@ class DaylioScribe {
         this.emojiPickerPopup = document.getElementById('emojiPickerPopup')!;
         this.emojiPicker = document.querySelector('emoji-picker')!;
 
-        // Add aria-label to emoji button in toolbar
+        // Add aria-labels to custom toolbar buttons
         setTimeout(() => {
             const emojiBtn = document.querySelector('.ql-emoji') as HTMLElement;
             if (emojiBtn) {
                 emojiBtn.setAttribute('aria-label', 'Insert emoji');
                 emojiBtn.setAttribute('title', 'Insert emoji');
+            }
+            const undoBtn = document.querySelector('.ql-undo') as HTMLElement;
+            if (undoBtn) {
+                undoBtn.setAttribute('aria-label', 'Undo');
+                undoBtn.setAttribute('title', 'Undo (Ctrl+Z)');
+            }
+            const redoBtn = document.querySelector('.ql-redo') as HTMLElement;
+            if (redoBtn) {
+                redoBtn.setAttribute('aria-label', 'Redo');
+                redoBtn.setAttribute('title', 'Redo (Ctrl+Shift+Z)');
             }
         }, 100);
 
@@ -332,6 +350,7 @@ class DaylioScribe {
         });
 
         this.noteTitleInput.addEventListener('input', () => this.updateCurrentEntry());
+        this.revertBtn.addEventListener('click', () => this.revertEntry());
 
         window.addEventListener('beforeunload', (e) => {
             if (this.hasUnsavedChanges) {
@@ -380,6 +399,7 @@ class DaylioScribe {
             }
 
             this.entries = this.data!.dayEntries || [];
+            this.storeOriginalEntryStates();
             this.buildMoodLabels();
             this.showApp();
         } catch (err) {
@@ -452,6 +472,30 @@ class DaylioScribe {
                 groupId: mood.mood_group_id
             };
         }
+    }
+
+    private storeOriginalEntryStates(): void {
+        this.originalEntryStates.clear();
+        for (let i = 0; i < this.entries.length; i++) {
+            const entry = this.entries[i];
+            this.originalEntryStates.set(i, {
+                note: entry.note || '',
+                note_title: entry.note_title || ''
+            });
+        }
+    }
+
+    private hasAnyChanges(): boolean {
+        for (let i = 0; i < this.entries.length; i++) {
+            const entry = this.entries[i];
+            const original = this.originalEntryStates.get(i);
+            if (!original) continue;
+
+            if (entry.note !== original.note || entry.note_title !== original.note_title) {
+                return true;
+            }
+        }
+        return false;
     }
 
     private getMoodLabel(moodId: number): string {
@@ -981,6 +1025,12 @@ class DaylioScribe {
         const delta = this.quill.clipboard.convert({ html: cleanHtml });
         this.quill.setContents(delta, 'silent');
 
+        // Clear Quill history for new entry
+        this.quill.history.clear();
+
+        // Hide revert button for fresh entry
+        this.revertBtn.classList.add('hidden');
+
         document.querySelectorAll('.entry-item').forEach(el => {
             const htmlEl = el as HTMLElement;
             el.classList.toggle('active', parseInt(htmlEl.dataset.index || '') === index);
@@ -1132,6 +1182,47 @@ class DaylioScribe {
 
         this.markUnsavedChanges();
         this.updateEntryPreview(this.currentEntryIndex);
+
+        // Show revert button if entry differs from original
+        const original = this.originalEntryStates.get(this.currentEntryIndex);
+        if (original) {
+            const hasChanges = entry.note !== original.note ||
+                              entry.note_title !== original.note_title;
+            this.revertBtn.classList.toggle('hidden', !hasChanges);
+        }
+    }
+
+    private revertEntry(): void {
+        if (this.currentEntryIndex === null) return;
+
+        const original = this.originalEntryStates.get(this.currentEntryIndex);
+        if (!original) return;
+
+        const entry = this.entries[this.currentEntryIndex];
+
+        // Restore original values
+        entry.note = original.note;
+        entry.note_title = original.note_title;
+
+        // Update UI
+        this.noteTitleInput.value = entry.note_title;
+        const cleanHtml = this.daylioToQuillHtml(entry.note);
+        const delta = this.quill.clipboard.convert({ html: cleanHtml });
+        this.quill.setContents(delta, 'silent');
+        this.quill.history.clear();
+
+        // Update entry preview in list
+        this.updateEntryPreview(this.currentEntryIndex);
+
+        // Hide revert button
+        this.revertBtn.classList.add('hidden');
+
+        // Update unsaved changes indicator
+        if (!this.hasAnyChanges()) {
+            this.clearUnsavedChanges();
+        }
+
+        this.showToast('info', 'Entry Reverted', 'Entry restored to its original state.');
     }
 
     private updateEntryPreview(originalIndex: number): void {

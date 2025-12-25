@@ -425,6 +425,14 @@ header h1 {
     cursor: pointer;
     transition: background 0.15s ease;
     margin-bottom: 5px;
+    height: 68px;
+    box-sizing: border-box;
+    overflow: hidden;
+}
+
+/* Virtual scroll spacers */
+.virtual-spacer {
+    pointer-events: none;
 }
 
 .entry-item:hover {

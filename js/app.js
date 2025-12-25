@@ -24,6 +24,13 @@ class DaylioScribe {
         this.currentEntryPhotos = [];  // Photo URLs for current entry
         this.currentPhotoIndex = 0;  // Currently viewed photo in lightbox
 
+        // Virtual scrolling state
+        this.itemHeight = 73;      // Fixed height per entry (68px + 5px margin)
+        this.bufferSize = 5;       // Extra items to render above/below viewport
+        this.lastVisibleStart = -1; // Track last rendered range to avoid unnecessary re-renders
+        this.lastVisibleEnd = -1;
+        this.scrollRAF = null;     // requestAnimationFrame handle for scroll throttling
+
         // Default mood labels (fallback when custom_name is empty)
         this.defaultMoodLabels = {
             1: 'great',
@@ -40,6 +47,7 @@ class DaylioScribe {
         this.initElements();
         this.initQuill();
         this.bindEvents();
+        this.initVirtualScroll();
     }
 
     initElements() {
@@ -686,17 +694,84 @@ class DaylioScribe {
         this.applyFilters();
     }
 
-    renderEntries() {
-        this.entriesList.innerHTML = '';
+    /**
+     * Initialize virtual scrolling by attaching scroll listener
+     */
+    initVirtualScroll() {
+        this.entriesList.addEventListener('scroll', () => this.handleScroll());
+    }
+
+    /**
+     * Handle scroll events with requestAnimationFrame throttling
+     */
+    handleScroll() {
+        if (this.scrollRAF) return;
+
+        this.scrollRAF = requestAnimationFrame(() => {
+            this.scrollRAF = null;
+            this.renderVirtualEntries(false);
+        });
+    }
+
+    /**
+     * Calculate the visible range of entries based on scroll position
+     */
+    calculateVisibleRange() {
+        const scrollTop = this.entriesList.scrollTop;
+        const containerHeight = this.entriesList.clientHeight;
+        const totalItems = this.filteredEntries.length;
+
+        // Calculate visible range
+        const visibleStart = Math.floor(scrollTop / this.itemHeight);
+        const visibleCount = Math.ceil(containerHeight / this.itemHeight);
+        const visibleEnd = Math.min(visibleStart + visibleCount, totalItems);
+
+        // Add buffer
+        const bufferedStart = Math.max(0, visibleStart - this.bufferSize);
+        const bufferedEnd = Math.min(totalItems, visibleEnd + this.bufferSize);
+
+        return { bufferedStart, bufferedEnd, totalItems };
+    }
+
+    /**
+     * Render only visible entries with virtual scrolling
+     * @param {boolean} forceRender - Force re-render even if range unchanged
+     */
+    renderVirtualEntries(forceRender = true) {
+        const { bufferedStart, bufferedEnd, totalItems } = this.calculateVisibleRange();
+
+        // Skip if range hasn't changed (unless forced)
+        if (!forceRender &&
+            bufferedStart === this.lastVisibleStart &&
+            bufferedEnd === this.lastVisibleEnd) {
+            return;
+        }
+
+        this.lastVisibleStart = bufferedStart;
+        this.lastVisibleEnd = bufferedEnd;
 
         // Get current search term for highlighting
         const searchTerm = this.searchInput.value.trim();
 
-        this.filteredEntries.forEach((entry, index) => {
+        // Create document fragment for efficient DOM manipulation
+        const fragment = document.createDocumentFragment();
+
+        // Top spacer
+        if (bufferedStart > 0) {
+            const topSpacer = document.createElement('div');
+            topSpacer.className = 'virtual-spacer';
+            topSpacer.style.height = `${bufferedStart * this.itemHeight}px`;
+            fragment.appendChild(topSpacer);
+        }
+
+        // Render visible entries
+        for (let i = bufferedStart; i < bufferedEnd; i++) {
+            const entry = this.filteredEntries[i];
             const originalIndex = this.entries.indexOf(entry);
             const div = document.createElement('div');
             div.className = 'entry-item';
             div.dataset.index = originalIndex;
+            div.dataset.virtualIndex = i;
 
             if (originalIndex === this.currentEntryIndex) {
                 div.classList.add('active');
@@ -722,8 +797,50 @@ class DaylioScribe {
             `;
 
             div.addEventListener('click', () => this.selectEntry(originalIndex));
-            this.entriesList.appendChild(div);
-        });
+            fragment.appendChild(div);
+        }
+
+        // Bottom spacer
+        const remainingItems = totalItems - bufferedEnd;
+        if (remainingItems > 0) {
+            const bottomSpacer = document.createElement('div');
+            bottomSpacer.className = 'virtual-spacer';
+            bottomSpacer.style.height = `${remainingItems * this.itemHeight}px`;
+            fragment.appendChild(bottomSpacer);
+        }
+
+        // Replace content
+        this.entriesList.innerHTML = '';
+        this.entriesList.appendChild(fragment);
+    }
+
+    /**
+     * Render entries - wrapper that uses virtual scrolling
+     */
+    renderEntries() {
+        // Reset scroll position and visible range tracking on filter change
+        this.lastVisibleStart = -1;
+        this.lastVisibleEnd = -1;
+        this.entriesList.scrollTop = 0;
+        this.renderVirtualEntries(true);
+    }
+
+    /**
+     * Scroll to ensure a specific entry is visible
+     */
+    scrollToEntry(filteredIndex) {
+        const scrollTop = filteredIndex * this.itemHeight;
+        const containerHeight = this.entriesList.clientHeight;
+        const currentScroll = this.entriesList.scrollTop;
+
+        // Check if entry is already visible
+        if (scrollTop >= currentScroll &&
+            scrollTop + this.itemHeight <= currentScroll + containerHeight) {
+            return; // Already visible
+        }
+
+        // Scroll to center the entry
+        this.entriesList.scrollTop = Math.max(0, scrollTop - containerHeight / 2 + this.itemHeight / 2);
     }
 
     formatDate(entry) {
@@ -950,8 +1067,28 @@ class DaylioScribe {
         // Mark as having unsaved changes
         this.markUnsavedChanges();
 
-        // Update preview in list
-        this.renderEntries();
+        // Update preview in list without resetting scroll
+        this.updateEntryPreview(this.currentEntryIndex);
+    }
+
+    /**
+     * Update just the preview of a specific entry in the list
+     * Avoids full re-render which would reset scroll position
+     */
+    updateEntryPreview(originalIndex) {
+        const entryEl = this.entriesList.querySelector(`.entry-item[data-index="${originalIndex}"]`);
+        if (!entryEl) return; // Entry not currently visible
+
+        const entry = this.entries[originalIndex];
+        const searchTerm = this.searchInput.value.trim();
+        const preview = this.getPreview(entry, searchTerm);
+        const hasContent = entry.note_title?.trim() || entry.note;
+
+        const previewEl = entryEl.querySelector('.entry-preview, .entry-no-note');
+        if (previewEl) {
+            previewEl.className = hasContent ? 'entry-preview' : 'entry-no-note';
+            previewEl.innerHTML = preview;
+        }
     }
 
     /**

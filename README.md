@@ -40,3 +40,8 @@ The app reads mood definitions from your backup:
 - Supports any number of mood levels
 - Color-coded mood badges for quick reference
 
+## License
+
+Copyright (c) 2025 charistas. All rights reserved.
+
+This source code is provided for viewing and educational purposes only. No permission is granted to copy, modify, distribute, or use this code in any project without explicit written permission from the author.

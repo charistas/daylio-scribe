@@ -18,6 +18,7 @@ class DaylioScribe {
     private filteredEntries: DayEntry[] = [];
     private currentEntryIndex: number | null = null;
     private moods: Record<number, MoodInfo> = {};
+    private tags: Record<number, string> = {};
     private assetMap: Record<number, Asset> | null = null;
 
     // Quill editor
@@ -85,6 +86,8 @@ class DaylioScribe {
     private editor!: HTMLElement;
     private editorDate!: HTMLElement;
     private editorMood!: HTMLElement;
+    private activitiesSection!: HTMLElement;
+    private activitiesContainer!: HTMLElement;
     private noteTitleInput!: HTMLInputElement;
     private revertBtn!: HTMLButtonElement;
     private photoSection!: HTMLElement;
@@ -162,6 +165,8 @@ class DaylioScribe {
         this.editor = document.getElementById('editor')!;
         this.editorDate = document.getElementById('editorDate')!;
         this.editorMood = document.getElementById('editorMood')!;
+        this.activitiesSection = document.getElementById('activitiesSection')!;
+        this.activitiesContainer = document.getElementById('activitiesContainer')!;
         this.noteTitleInput = document.getElementById('noteTitleInput') as HTMLInputElement;
         this.revertBtn = document.getElementById('revertBtn') as HTMLButtonElement;
         this.photoSection = document.getElementById('photoSection')!;
@@ -434,6 +439,7 @@ class DaylioScribe {
             this.entries = this.data!.dayEntries || [];
             this.storeOriginalEntryStates();
             this.buildMoodLabels();
+            this.buildTagLabels();
             this.showApp();
         } catch (err) {
             this.showToast('error', 'Failed to Load Backup', (err as Error).message);
@@ -505,6 +511,24 @@ class DaylioScribe {
                 groupId: mood.mood_group_id
             };
         }
+    }
+
+    private buildTagLabels(): void {
+        this.tags = {};
+        const tags = this.data?.tags || [];
+
+        for (const tag of tags) {
+            this.tags[tag.id] = tag.name;
+        }
+    }
+
+    private getTagName(tagId: number): string {
+        return this.tags[tagId] || `activity ${tagId}`;
+    }
+
+    private getEntryTags(entry: DayEntry): string[] {
+        if (!entry.tags || entry.tags.length === 0) return [];
+        return entry.tags.map(tagId => this.getTagName(tagId));
     }
 
     private storeOriginalEntryStates(): void {
@@ -971,10 +995,18 @@ class DaylioScribe {
             const photoIcon = hasPhotos ? '<span class="photo-icon" aria-hidden="true">📷</span>' : '';
             const photoSrText = hasPhotos ? '<span class="sr-only">, has photos</span>' : '';
 
+            const activityCount = entry.tags?.length || 0;
+            const activityIndicator = activityCount > 0
+                ? `<span class="activity-indicator" aria-hidden="true">${activityCount} activities</span>`
+                : '';
+            const activitySrText = activityCount > 0
+                ? `<span class="sr-only">, ${activityCount} activities</span>`
+                : '';
+
             div.innerHTML = `
                 <div class="entry-header">
                     <span class="entry-date">${date}</span>
-                    ${photoIcon}${photoSrText}
+                    <span class="entry-indicators">${activityIndicator}${activitySrText}${photoIcon}${photoSrText}</span>
                     <span class="mood-badge ${moodClass}">${moodLabel}</span>
                 </div>
                 <div class="${hasContent ? 'entry-preview' : 'entry-no-note'}">${preview}</div>
@@ -1077,6 +1109,9 @@ class DaylioScribe {
         // Hide revert button for fresh entry
         this.revertBtn.classList.add('hidden');
 
+        // Render activities
+        this.renderActivities(entry);
+
         document.querySelectorAll('.entry-item').forEach(el => {
             const htmlEl = el as HTMLElement;
             el.classList.toggle('active', parseInt(htmlEl.dataset.index || '') === index);
@@ -1118,6 +1153,21 @@ class DaylioScribe {
         setTimeout(() => {
             liveRegion!.textContent = message;
         }, 100);
+    }
+
+    private renderActivities(entry: DayEntry): void {
+        const tagNames = this.getEntryTags(entry);
+
+        if (tagNames.length === 0) {
+            this.activitiesSection.classList.add('hidden');
+            return;
+        }
+
+        this.activitiesContainer.innerHTML = tagNames
+            .map(name => `<span class="activity-chip">${this.escapeHtml(name)}</span>`)
+            .join('');
+
+        this.activitiesSection.classList.remove('hidden');
     }
 
     private renderPhotos(entry: DayEntry): void {

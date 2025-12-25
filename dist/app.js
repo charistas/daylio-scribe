@@ -10,6 +10,7 @@
       this.filteredEntries = [];
       this.currentEntryIndex = null;
       this.moods = {};
+      this.tags = {};
       this.assetMap = null;
       // Quill editor
       this.quill = null;
@@ -111,6 +112,8 @@
       this.editor = document.getElementById("editor");
       this.editorDate = document.getElementById("editorDate");
       this.editorMood = document.getElementById("editorMood");
+      this.activitiesSection = document.getElementById("activitiesSection");
+      this.activitiesContainer = document.getElementById("activitiesContainer");
       this.noteTitleInput = document.getElementById("noteTitleInput");
       this.revertBtn = document.getElementById("revertBtn");
       this.photoSection = document.getElementById("photoSection");
@@ -342,6 +345,7 @@
         this.entries = this.data.dayEntries || [];
         this.storeOriginalEntryStates();
         this.buildMoodLabels();
+        this.buildTagLabels();
         this.showApp();
       } catch (err) {
         this.showToast("error", "Failed to Load Backup", err.message);
@@ -405,6 +409,20 @@ Do you want to continue anyway?`
           groupId: mood.mood_group_id
         };
       }
+    }
+    buildTagLabels() {
+      this.tags = {};
+      const tags = this.data?.tags || [];
+      for (const tag of tags) {
+        this.tags[tag.id] = tag.name;
+      }
+    }
+    getTagName(tagId) {
+      return this.tags[tagId] || `activity ${tagId}`;
+    }
+    getEntryTags(entry) {
+      if (!entry.tags || entry.tags.length === 0) return [];
+      return entry.tags.map((tagId) => this.getTagName(tagId));
     }
     storeOriginalEntryStates() {
       this.originalEntryStates.clear();
@@ -792,10 +810,13 @@ Do you want to continue anyway?`
         const hasPhotos = entry.assets && entry.assets.length > 0;
         const photoIcon = hasPhotos ? '<span class="photo-icon" aria-hidden="true">\u{1F4F7}</span>' : "";
         const photoSrText = hasPhotos ? '<span class="sr-only">, has photos</span>' : "";
+        const activityCount = entry.tags?.length || 0;
+        const activityIndicator = activityCount > 0 ? `<span class="activity-indicator" aria-hidden="true">${activityCount} activities</span>` : "";
+        const activitySrText = activityCount > 0 ? `<span class="sr-only">, ${activityCount} activities</span>` : "";
         div.innerHTML = `
                 <div class="entry-header">
                     <span class="entry-date">${date}</span>
-                    ${photoIcon}${photoSrText}
+                    <span class="entry-indicators">${activityIndicator}${activitySrText}${photoIcon}${photoSrText}</span>
                     <span class="mood-badge ${moodClass}">${moodLabel}</span>
                 </div>
                 <div class="${hasContent ? "entry-preview" : "entry-no-note"}">${preview}</div>
@@ -884,6 +905,7 @@ Do you want to continue anyway?`
       this.quill.setContents(delta, "silent");
       this.quill.history.clear();
       this.revertBtn.classList.add("hidden");
+      this.renderActivities(entry);
       document.querySelectorAll(".entry-item").forEach((el) => {
         const htmlEl = el;
         el.classList.toggle("active", parseInt(htmlEl.dataset.index || "") === index);
@@ -916,6 +938,15 @@ Do you want to continue anyway?`
       setTimeout(() => {
         liveRegion.textContent = message;
       }, 100);
+    }
+    renderActivities(entry) {
+      const tagNames = this.getEntryTags(entry);
+      if (tagNames.length === 0) {
+        this.activitiesSection.classList.add("hidden");
+        return;
+      }
+      this.activitiesContainer.innerHTML = tagNames.map((name) => `<span class="activity-chip">${this.escapeHtml(name)}</span>`).join("");
+      this.activitiesSection.classList.remove("hidden");
     }
     renderPhotos(entry) {
       this.currentEntryPhotos.forEach((url) => URL.revokeObjectURL(url));

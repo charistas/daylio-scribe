@@ -567,13 +567,24 @@ header h1 {
 
 .entry-header {
     display: flex;
-    justify-content: space-between;
     align-items: center;
+    gap: 8px;
     margin-bottom: 5px;
 }
 
 .entry-date {
     font-weight: 500;
+}
+
+.entry-indicators {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    flex: 1;
+}
+
+.entry-header .mood-badge {
+    margin-left: auto;
     font-size: 0.9rem;
 }
 
@@ -656,6 +667,35 @@ header h1 {
 .editor-header h3 {
     font-size: 1.1rem;
     font-weight: 500;
+}
+
+/* Activities Section */
+.activities-section {
+    margin-bottom: 15px;
+    padding-bottom: 15px;
+    border-bottom: 1px solid var(--border);
+}
+
+.activities-container {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+}
+
+.activity-chip {
+    display: inline-block;
+    padding: 4px 12px;
+    background: var(--bg-tertiary);
+    border: 1px solid var(--border);
+    border-radius: 16px;
+    font-size: 0.85rem;
+    color: var(--text-primary);
+}
+
+/* Activity indicator in entry list */
+.activity-indicator {
+    font-size: 0.7rem;
+    color: var(--text-secondary);
 }
 
 .editor-field {

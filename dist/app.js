@@ -58,10 +58,31 @@
           }
         }
       };
+      this.initTheme();
       this.initElements();
       this.initQuill();
       this.bindEvents();
       this.initVirtualScroll();
+    }
+    initTheme() {
+      const savedTheme = localStorage.getItem("theme");
+      if (savedTheme) {
+        document.documentElement.setAttribute("data-theme", savedTheme);
+      }
+    }
+    toggleTheme() {
+      const currentTheme = document.documentElement.getAttribute("data-theme");
+      const systemPrefersDark = window.matchMedia("(prefers-color-scheme: dark)").matches;
+      let newTheme;
+      if (currentTheme === "light") {
+        newTheme = "dark";
+      } else if (currentTheme === "dark") {
+        newTheme = "light";
+      } else {
+        newTheme = systemPrefersDark ? "light" : "dark";
+      }
+      document.documentElement.setAttribute("data-theme", newTheme);
+      localStorage.setItem("theme", newTheme);
     }
     initElements() {
       this.toastContainer = document.getElementById("toastContainer");
@@ -101,6 +122,7 @@
       this.lightboxClose = document.getElementById("lightboxClose");
       this.lightboxPrev = document.getElementById("lightboxPrev");
       this.lightboxNext = document.getElementById("lightboxNext");
+      this.themeToggle = document.getElementById("themeToggle");
     }
     initQuill() {
       this.quill = new Quill("#noteEditor", {
@@ -224,6 +246,7 @@
       this.quill.setSelection(range.index + emoji.length);
     }
     bindEvents() {
+      this.themeToggle.addEventListener("click", () => this.toggleTheme());
       this.dropzone.addEventListener("click", () => this.fileInput.click());
       this.fileInput.addEventListener("change", (e) => {
         const target = e.target;

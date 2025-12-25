@@ -98,12 +98,41 @@ class DaylioScribe {
     private lightboxNext!: HTMLElement;
     private emojiPickerPopup!: HTMLElement;
     private emojiPicker!: HTMLElement;
+    private themeToggle!: HTMLButtonElement;
 
     constructor() {
+        this.initTheme();
         this.initElements();
         this.initQuill();
         this.bindEvents();
         this.initVirtualScroll();
+    }
+
+    private initTheme(): void {
+        // Check for saved preference, otherwise use system preference
+        const savedTheme = localStorage.getItem('theme');
+        if (savedTheme) {
+            document.documentElement.setAttribute('data-theme', savedTheme);
+        }
+        // If no saved theme, the CSS handles system preference via @media query
+    }
+
+    private toggleTheme(): void {
+        const currentTheme = document.documentElement.getAttribute('data-theme');
+        const systemPrefersDark = window.matchMedia('(prefers-color-scheme: dark)').matches;
+
+        let newTheme: string;
+        if (currentTheme === 'light') {
+            newTheme = 'dark';
+        } else if (currentTheme === 'dark') {
+            newTheme = 'light';
+        } else {
+            // No explicit theme set, toggle from system preference
+            newTheme = systemPrefersDark ? 'light' : 'dark';
+        }
+
+        document.documentElement.setAttribute('data-theme', newTheme);
+        localStorage.setItem('theme', newTheme);
     }
 
     private initElements(): void {
@@ -144,6 +173,7 @@ class DaylioScribe {
         this.lightboxClose = document.getElementById('lightboxClose')!;
         this.lightboxPrev = document.getElementById('lightboxPrev')!;
         this.lightboxNext = document.getElementById('lightboxNext')!;
+        this.themeToggle = document.getElementById('themeToggle') as HTMLButtonElement;
     }
 
     private initQuill(): void {
@@ -288,6 +318,7 @@ class DaylioScribe {
     }
 
     private bindEvents(): void {
+        this.themeToggle.addEventListener('click', () => this.toggleTheme());
         this.dropzone.addEventListener('click', () => this.fileInput.click());
         this.fileInput.addEventListener('change', (e) => {
             const target = e.target as HTMLInputElement;

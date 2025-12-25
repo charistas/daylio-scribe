@@ -133,9 +133,9 @@ class DaylioScribe {
             }
         });
 
-        // Listen for text changes
-        this.quill.on('text-change', () => {
-            if (!this.isUpdating) {
+        // Listen for text changes - only save on USER edits, not API/normalization changes
+        this.quill.on('text-change', (delta, oldDelta, source) => {
+            if (!this.isUpdating && source === 'user') {
                 this.updateCurrentEntry();
             }
         });
@@ -1006,9 +1006,6 @@ class DaylioScribe {
         result = result.replace(/<div>/gi, '<p>');
         result = result.replace(/<\/div>/gi, '</p>');
 
-        // Convert <br> to Quill line breaks within paragraphs
-        // Quill handles <br> within <p> tags
-
         // Handle \n in the content
         result = result.replace(/\\n/g, '<br>');
 
@@ -1028,11 +1025,66 @@ class DaylioScribe {
         result = result.replace(/<font[^>]*>/gi, '');
         result = result.replace(/<\/font>/gi, '');
 
+        // Convert <br> tags to paragraph structure for Quill
+        // Quill drops <br> inside paragraphs, so we must convert them to separate <p> blocks
+        result = this.convertBrToQuillParagraphs(result);
+
         // Clean up empty paragraphs at the start
         result = result.replace(/^(<p><br><\/p>)+/, '');
 
         // Add data-list attributes for Quill list recognition
         result = this.addQuillListAttributes(result);
+
+        return result;
+    }
+
+    /**
+     * Convert <br> tags to paragraph structure that Quill understands.
+     * Quill's block model doesn't support <br> inside paragraphs - it silently drops them.
+     * We convert <br> to paragraph breaks so line breaks are preserved.
+     */
+    convertBrToQuillParagraphs(html) {
+        if (!html) return html;
+
+        let result = html;
+
+        // Step 1: Protect existing <p><br></p> patterns (they're already correct blank lines)
+        const BLANK_LINE_PLACEHOLDER = '___BLANK_LINE_PLACEHOLDER___';
+        result = result.replace(/<p><br\s*\/?><\/p>/gi, BLANK_LINE_PLACEHOLDER);
+
+        // Step 2: Convert <br><br> (blank line) to empty paragraph
+        const BR_PLACEHOLDER = '___BR_PLACEHOLDER___';
+        result = result.replace(/<br\s*\/?>\s*<br\s*\/?>/gi, `</p><p>${BR_PLACEHOLDER}</p><p>`);
+
+        // Step 3: Convert remaining single <br> to paragraph break
+        result = result.replace(/<br\s*\/?>/gi, '</p><p>');
+
+        // Step 4: Restore placeholders
+        result = result.replace(new RegExp(BR_PLACEHOLDER, 'g'), '<br>');
+        result = result.replace(new RegExp(BLANK_LINE_PLACEHOLDER, 'g'), '<p><br></p>');
+
+        // Step 5: Wrap leading text in <p> if it doesn't start with a tag
+        if (result && !result.startsWith('<')) {
+            const firstTagMatch = result.match(/<[^>]+>/);
+            if (firstTagMatch) {
+                const firstTagIndex = result.indexOf(firstTagMatch[0]);
+                const leadingText = result.substring(0, firstTagIndex);
+                const rest = result.substring(firstTagIndex);
+                if (leadingText.trim()) {
+                    result = `<p>${leadingText}</p>${rest}`;
+                }
+            } else {
+                // No tags at all - wrap everything
+                result = `<p>${result}</p>`;
+            }
+        }
+
+        // Step 6: Fix malformed closing/opening tag sequences
+        result = result.replace(/<\/p>\s*<\/p>/gi, '</p>');
+        result = result.replace(/<p>\s*<p>/gi, '<p>');
+
+        // Step 7: Remove empty paragraphs (but keep <p><br></p> for blank lines)
+        result = result.replace(/<p><\/p>/g, '');
 
         return result;
     }

@@ -799,11 +799,10 @@ class DaylioScribe {
 
         this.noteTitleInput.value = entry.note_title || '';
 
-        // Load HTML content into Quill
-        this.isUpdating = true;
+        // Load HTML content into Quill using 'silent' to prevent triggering change events
         const cleanHtml = this.daylioToQuillHtml(entry.note || '');
-        this.quill.root.innerHTML = cleanHtml;
-        this.isUpdating = false;
+        const delta = this.quill.clipboard.convert({ html: cleanHtml });
+        this.quill.setContents(delta, 'silent');
 
         // Update active state in list
         document.querySelectorAll('.entry-item').forEach(el => {

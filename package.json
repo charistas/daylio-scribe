@@ -9,9 +9,13 @@
     "quill": "2.0.3"
   },
   "scripts": {
+    "test": "vitest",
+    "test:run": "vitest run",
     "update-vendor": "node scripts/update-vendor.js"
   },
   "devDependencies": {
-    "esbuild": "^0.27.2"
+    "esbuild": "^0.27.2",
+    "jsdom": "^27.3.0",
+    "vitest": "^4.0.16"
   }
 }

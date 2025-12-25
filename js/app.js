@@ -51,6 +51,9 @@ class DaylioScribe {
     }
 
     initElements() {
+        // Toast container
+        this.toastContainer = document.getElementById('toastContainer');
+
         // Dropzone
         this.dropzone = document.getElementById('dropzone');
         this.fileInput = document.getElementById('fileInput');
@@ -296,7 +299,7 @@ class DaylioScribe {
 
     async handleFile(file) {
         if (!file || !file.name.endsWith('.daylio')) {
-            alert('Please select a valid .daylio backup file');
+            this.showToast('error', 'Invalid File', 'Please select a .daylio backup file exported from the Daylio app.');
             return;
         }
 
@@ -327,6 +330,9 @@ class DaylioScribe {
             const jsonString = this.base64DecodeUtf8(base64Content.trim());
             this.data = JSON.parse(jsonString);
 
+            // Validate backup structure
+            this.validateBackupStructure();
+
             // Check backup version compatibility
             if (!this.checkVersion()) {
                 this.dropzone.querySelector('p').textContent = 'Drop your .daylio backup file here';
@@ -340,7 +346,7 @@ class DaylioScribe {
 
             this.showApp();
         } catch (err) {
-            alert('Error loading backup: ' + err.message);
+            this.showToast('error', 'Failed to Load Backup', err.message);
             this.dropzone.querySelector('p').textContent = 'Drop your .daylio backup file here';
         }
     }
@@ -372,6 +378,35 @@ class DaylioScribe {
         }
 
         return true;
+    }
+
+    /**
+     * Validate that the backup has the expected Daylio structure
+     * Throws an error if validation fails
+     */
+    validateBackupStructure() {
+        if (!this.data || typeof this.data !== 'object') {
+            throw new Error('Invalid backup: not a valid JSON object');
+        }
+
+        if (!Array.isArray(this.data.dayEntries)) {
+            throw new Error('Invalid backup: missing or invalid dayEntries array');
+        }
+
+        if (!Array.isArray(this.data.customMoods)) {
+            throw new Error('Invalid backup: missing or invalid customMoods array');
+        }
+
+        // Validate each entry has required fields
+        for (let i = 0; i < Math.min(this.data.dayEntries.length, 5); i++) {
+            const entry = this.data.dayEntries[i];
+            if (typeof entry.datetime !== 'number') {
+                throw new Error(`Invalid backup: entry ${i} missing datetime field`);
+            }
+            if (typeof entry.mood !== 'number') {
+                throw new Error(`Invalid backup: entry ${i} missing mood field`);
+            }
+        }
     }
 
     /**
@@ -1387,6 +1422,60 @@ class DaylioScribe {
     }
 
     /**
+     * Show a toast notification
+     * @param {string} type - 'error', 'success', 'warning', or 'info'
+     * @param {string} title - Toast title
+     * @param {string} message - Toast message (optional)
+     * @param {number} duration - Auto-dismiss duration in ms (0 for no auto-dismiss)
+     */
+    showToast(type, title, message = '', duration = 5000) {
+        const icons = {
+            error: '✕',
+            success: '✓',
+            warning: '⚠',
+            info: 'ℹ'
+        };
+
+        const toast = document.createElement('div');
+        toast.className = `toast toast-${type}`;
+        toast.innerHTML = `
+            <span class="toast-icon">${icons[type] || icons.info}</span>
+            <div class="toast-content">
+                <div class="toast-title">${this.escapeHtml(title)}</div>
+                ${message ? `<div class="toast-message">${this.escapeHtml(message)}</div>` : ''}
+            </div>
+            <button class="toast-close" aria-label="Close">×</button>
+        `;
+
+        // Close button handler
+        const closeBtn = toast.querySelector('.toast-close');
+        closeBtn.addEventListener('click', () => this.dismissToast(toast));
+
+        this.toastContainer.appendChild(toast);
+
+        // Auto-dismiss
+        if (duration > 0) {
+            setTimeout(() => this.dismissToast(toast), duration);
+        }
+
+        return toast;
+    }
+
+    /**
+     * Dismiss a toast notification with animation
+     */
+    dismissToast(toast) {
+        if (!toast || !toast.parentNode) return;
+
+        toast.classList.add('toast-out');
+        toast.addEventListener('animationend', () => {
+            if (toast.parentNode) {
+                toast.parentNode.removeChild(toast);
+            }
+        });
+    }
+
+    /**
      * Escape HTML special characters to prevent XSS
      */
     escapeHtml(text) {
@@ -1486,8 +1575,9 @@ class DaylioScribe {
 
             // Clear unsaved changes flag
             this.clearUnsavedChanges();
+            this.showToast('success', 'Backup Downloaded', 'Your modified backup is ready to import into Daylio.');
         } catch (err) {
-            alert('Error saving backup: ' + err.message);
+            this.showToast('error', 'Failed to Save Backup', err.message);
         }
     }
 
@@ -1497,7 +1587,7 @@ class DaylioScribe {
     exportCsv() {
         try {
             if (!this.entries || this.entries.length === 0) {
-                alert('No entries to export');
+                this.showToast('warning', 'No Entries', 'Load a backup file first before exporting.');
                 return;
             }
 
@@ -1559,8 +1649,10 @@ class DaylioScribe {
         a.click();
         document.body.removeChild(a);
         URL.revokeObjectURL(url);
+
+        this.showToast('success', 'CSV Exported', `Exported ${this.entries.length} entries to CSV.`);
         } catch (err) {
-            alert('Error exporting CSV: ' + err.message);
+            this.showToast('error', 'Failed to Export CSV', err.message);
             console.error('CSV export error:', err);
         }
     }

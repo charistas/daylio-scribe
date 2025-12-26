@@ -2090,6 +2090,7 @@ Do you want to continue anyway?`
           "December"
         ];
         const weekdays = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
+        const { jsPDF } = jspdf;
         const doc = new jsPDF("p", "mm", "a4");
         const pageWidth = doc.internal.pageSize.getWidth();
         const pageHeight = doc.internal.pageSize.getHeight();

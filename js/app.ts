@@ -8,7 +8,7 @@ import type { DaylioBackup, DayEntry, CustomMood, Asset, MoodInfo, DateRange, Vi
 declare const Quill: any;
 declare const JSZip: any;
 declare const html2canvas: (element: HTMLElement, options?: any) => Promise<HTMLCanvasElement>;
-declare const jsPDF: any;
+declare const jspdf: { jsPDF: any };
 
 // Highest Daylio backup version tested with this app
 const SUPPORTED_VERSION = 19;
@@ -2664,6 +2664,7 @@ class DaylioScribe {
             const weekdays = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
 
             // Create PDF using jsPDF
+            const { jsPDF } = jspdf;
             const doc = new jsPDF('p', 'mm', 'a4');
             const pageWidth = doc.internal.pageSize.getWidth();
             const pageHeight = doc.internal.pageSize.getHeight();

@@ -3,13 +3,13 @@
  */
 
 import type { DaylioBackup, DayEntry, CustomMood, Asset, MoodInfo, DateRange, VisibleRange, ToastType } from './types.js';
+import { EMOJI_MAP } from './emojiMap.js';
 
 // Declare external globals (loaded via script tags)
 declare const Quill: any;
 declare const JSZip: any;
 declare const html2canvas: (element: HTMLElement, options?: any) => Promise<HTMLCanvasElement>;
-declare const jspdf: { jsPDF: any };
-declare const ROBOTO_FONTS: { regular: string; bold: string };
+declare const pdfMake: any;
 
 // Highest Daylio backup version tested with this app
 const SUPPORTED_VERSION = 19;
@@ -2400,6 +2400,34 @@ class DaylioScribe {
         return btoa(binaryString);
     }
 
+    /** Convert emojis to text representation for PDF export (fonts don't support emojis) */
+    private emojisToText(text: string): string {
+        // Regex to match emojis (covers most common emoji ranges)
+        const emojiRegex = /[\u{1F300}-\u{1F9FF}]|[\u{2600}-\u{26FF}]|[\u{2700}-\u{27BF}]|[\u{1F600}-\u{1F64F}]|[\u{1F680}-\u{1F6FF}]|[\u{1F1E0}-\u{1F1FF}]|[\u{2300}-\u{23FF}]|[\u{2B50}]|[\u{200D}]|[\u{FE0F}]|[\u{1FA00}-\u{1FAFF}]|[\u{E0000}-\u{E007F}]/gu;
+
+        return text.replace(emojiRegex, (match) => {
+            // Skip variation selectors, zero-width joiners, and tag characters
+            if (match === '\u{FE0F}' || match === '\u{200D}' || (match.charCodeAt(0) >= 0xE0000 && match.charCodeAt(0) <= 0xE007F)) {
+                return '';
+            }
+
+            // Try to find the emoji in our map (1,800+ emojis from GitHub gemoji)
+            let textName = EMOJI_MAP[match];
+            if (textName) {
+                return textName;
+            }
+
+            // Try with variation selector added (some emojis stored without it)
+            textName = EMOJI_MAP[match + '\uFE0F'];
+            if (textName) {
+                return textName;
+            }
+
+            // For unknown emojis, use a generic placeholder
+            return '[emoji]';
+        });
+    }
+
     private async saveBackup(): Promise<void> {
         if (!this.data) return;
 
@@ -2661,7 +2689,7 @@ class DaylioScribe {
         }
     }
 
-    private async exportPdf(): Promise<void> {
+    private exportPdf(): void {
         try {
             if (!this.entries || this.entries.length === 0) {
                 this.showToast('warning', 'No Entries', 'Load a backup file first before exporting.');
@@ -2673,141 +2701,94 @@ class DaylioScribe {
                            'July', 'August', 'September', 'October', 'November', 'December'];
             const weekdays = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
 
-            // Create PDF using jsPDF
-            const { jsPDF } = jspdf;
-            const doc = new jsPDF('p', 'mm', 'a4');
-
-            // Add Roboto fonts for Unicode support (Greek, etc.)
-            doc.addFileToVFS('Roboto-Regular.ttf', ROBOTO_FONTS.regular);
-            doc.addFileToVFS('Roboto-Bold.ttf', ROBOTO_FONTS.bold);
-            doc.addFont('Roboto-Regular.ttf', 'Roboto', 'normal');
-            doc.addFont('Roboto-Bold.ttf', 'Roboto', 'bold');
-
-            const pageWidth = doc.internal.pageSize.getWidth();
-            const pageHeight = doc.internal.pageSize.getHeight();
-            const margin = 15;
-            const contentWidth = pageWidth - (margin * 2);
-            let y = margin;
+            // Build document content
+            const content: any[] = [];
 
             // Title
-            doc.setFontSize(24);
-            doc.setFont('Roboto', 'bold');
-            doc.text('Daylio Journal', margin, y);
-            y += 12;
-
-            doc.setFontSize(10);
-            doc.setFont('Roboto', 'normal');
-            doc.setTextColor(100);
-            doc.text(`Exported on ${new Date().toLocaleDateString()}`, margin, y);
-            doc.setTextColor(0);
-            y += 10;
+            content.push({ text: 'Daylio Journal', style: 'title' });
+            content.push({ text: `Exported on ${new Date().toLocaleDateString()}`, style: 'subtitle', margin: [0, 0, 0, 15] });
 
             let currentYear = -1;
             let currentMonth = -1;
 
             for (const entry of sortedEntries) {
-                // Check if we need a new page
-                if (y > pageHeight - 40) {
-                    doc.addPage();
-                    y = margin;
-                }
-
                 // Year header
                 if (entry.year !== currentYear) {
                     currentYear = entry.year;
                     currentMonth = -1;
-                    y += 5;
-                    doc.setFontSize(18);
-                    doc.setFont('Roboto', 'bold');
-                    doc.text(String(currentYear), margin, y);
-                    y += 8;
+                    content.push({ text: String(currentYear), style: 'yearHeader', margin: [0, 10, 0, 5] });
                 }
 
                 // Month header
                 if (entry.month !== currentMonth) {
                     currentMonth = entry.month;
-                    doc.setFontSize(14);
-                    doc.setFont('Roboto', 'bold');
-                    doc.setTextColor(80);
-                    doc.text(months[currentMonth], margin, y);
-                    doc.setTextColor(0);
-                    y += 7;
-                }
-
-                // Check page break before entry
-                if (y > pageHeight - 30) {
-                    doc.addPage();
-                    y = margin;
+                    content.push({ text: months[currentMonth], style: 'monthHeader', margin: [0, 5, 0, 5] });
                 }
 
                 // Entry date and mood
                 const date = new Date(entry.year, entry.month, entry.day);
                 const weekday = weekdays[date.getDay()];
                 const time = `${String(entry.hour).padStart(2, '0')}:${String(entry.minute).padStart(2, '0')}`;
-                const mood = this.getMoodLabel(entry.mood);
+                const mood = this.emojisToText(this.getMoodLabel(entry.mood));
 
-                doc.setFontSize(11);
-                doc.setFont('Roboto', 'bold');
-                doc.text(`${months[entry.month]} ${entry.day}, ${weekday}`, margin, y);
+                content.push({
+                    columns: [
+                        { text: `${months[entry.month]} ${entry.day}, ${weekday}`, style: 'entryDate', width: 'auto' },
+                        { text: `${time} • ${mood}`, style: 'entryMeta', width: '*', margin: [10, 0, 0, 0] }
+                    ],
+                    margin: [0, 3, 0, 2]
+                });
 
-                doc.setFont('Roboto', 'normal');
-                doc.setTextColor(100);
-                doc.text(`${time} • ${mood}`, margin + 50, y);
-                doc.setTextColor(0);
-                y += 5;
-
-                // Activities
+                // Activities (convert emojis to text for PDF compatibility)
                 const activities = this.getEntryTags(entry);
                 if (activities.length > 0) {
-                    doc.setFontSize(9);
-                    doc.setTextColor(80);
-                    const activityText = activities.join(', ');
-                    const activityLines = doc.splitTextToSize(activityText, contentWidth);
-                    doc.text(activityLines, margin, y);
-                    y += activityLines.length * 4;
-                    doc.setTextColor(0);
+                    content.push({ text: this.emojisToText(activities.join(', ')), style: 'activities', margin: [0, 0, 0, 2] });
                 }
 
-                // Title
+                // Title (convert emojis to text for PDF compatibility)
                 if (entry.note_title?.trim()) {
-                    doc.setFontSize(10);
-                    doc.setFont('Roboto', 'bold');
-                    const titleLines = doc.splitTextToSize(entry.note_title.trim(), contentWidth);
-                    doc.text(titleLines, margin, y);
-                    y += titleLines.length * 4 + 1;
-                    doc.setFont('Roboto', 'normal');
+                    content.push({ text: this.emojisToText(entry.note_title.trim()), style: 'noteTitle', margin: [0, 2, 0, 2] });
                 }
 
-                // Note content
+                // Note content (convert emojis to text for PDF compatibility)
                 if (entry.note) {
                     const plainText = this.htmlToPlainText(entry.note);
                     if (plainText) {
-                        doc.setFontSize(9);
-                        const noteLines = doc.splitTextToSize(plainText, contentWidth);
-
-                        // Handle page breaks for long notes
-                        for (const line of noteLines) {
-                            if (y > pageHeight - 15) {
-                                doc.addPage();
-                                y = margin;
-                            }
-                            doc.text(line, margin, y);
-                            y += 4;
-                        }
+                        content.push({ text: this.emojisToText(plainText), style: 'noteContent', margin: [0, 0, 0, 3] });
                     }
                 }
 
-                // Separator
-                y += 3;
-                doc.setDrawColor(200);
-                doc.line(margin, y, pageWidth - margin, y);
-                y += 5;
+                // Separator line
+                content.push({
+                    canvas: [{ type: 'line', x1: 0, y1: 0, x2: 515, y2: 0, lineWidth: 0.5, lineColor: '#cccccc' }],
+                    margin: [0, 5, 0, 5]
+                });
             }
 
-            // Save the PDF
+            // Document definition
+            const docDefinition = {
+                content,
+                styles: {
+                    title: { fontSize: 24, bold: true },
+                    subtitle: { fontSize: 10, color: '#666666' },
+                    yearHeader: { fontSize: 18, bold: true },
+                    monthHeader: { fontSize: 14, bold: true, color: '#505050' },
+                    entryDate: { fontSize: 11, bold: true },
+                    entryMeta: { fontSize: 11, color: '#666666' },
+                    activities: { fontSize: 9, color: '#505050' },
+                    noteTitle: { fontSize: 10, bold: true },
+                    noteContent: { fontSize: 9 }
+                },
+                defaultStyle: {
+                    font: 'Roboto'
+                },
+                pageMargins: [40, 40, 40, 40] as [number, number, number, number]
+            };
+
+            // Generate and download PDF
             const now = new Date();
             const dateStr = `${now.getFullYear()}_${String(now.getMonth() + 1).padStart(2, '0')}_${String(now.getDate()).padStart(2, '0')}`;
-            doc.save(`daylio_export_${dateStr}.pdf`);
+            pdfMake.createPdf(docDefinition).download(`daylio_export_${dateStr}.pdf`);
 
             this.showToast('success', 'PDF Exported', `Exported ${this.entries.length} entries to PDF.`);
         } catch (err) {

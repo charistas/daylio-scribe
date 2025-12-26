@@ -1855,6 +1855,14 @@ Do you want to continue anyway?`
       }
       return btoa(binaryString);
     }
+    arrayBufferToBase64(buffer) {
+      const bytes = new Uint8Array(buffer);
+      let binaryString = "";
+      for (let i = 0; i < bytes.length; i++) {
+        binaryString += String.fromCharCode(bytes[i]);
+      }
+      return btoa(binaryString);
+    }
     async saveBackup() {
       if (!this.data) return;
       try {
@@ -2074,6 +2082,7 @@ Do you want to continue anyway?`
           this.showToast("warning", "No Entries", "Load a backup file first before exporting.");
           return;
         }
+        this.showToast("info", "Generating PDF", "Loading fonts...");
         const sortedEntries = [...this.entries].sort((a, b) => b.datetime - a.datetime);
         const months = [
           "January",
@@ -2092,17 +2101,25 @@ Do you want to continue anyway?`
         const weekdays = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
         const { jsPDF } = jspdf;
         const doc = new jsPDF("p", "mm", "a4");
+        const [robotoRegular, robotoBold] = await Promise.all([
+          fetch("vendor/Roboto-Regular.ttf").then((r) => r.arrayBuffer()),
+          fetch("vendor/Roboto-Bold.ttf").then((r) => r.arrayBuffer())
+        ]);
+        doc.addFileToVFS("Roboto-Regular.ttf", this.arrayBufferToBase64(robotoRegular));
+        doc.addFileToVFS("Roboto-Bold.ttf", this.arrayBufferToBase64(robotoBold));
+        doc.addFont("Roboto-Regular.ttf", "Roboto", "normal");
+        doc.addFont("Roboto-Bold.ttf", "Roboto", "bold");
         const pageWidth = doc.internal.pageSize.getWidth();
         const pageHeight = doc.internal.pageSize.getHeight();
         const margin = 15;
         const contentWidth = pageWidth - margin * 2;
         let y = margin;
         doc.setFontSize(24);
-        doc.setFont("helvetica", "bold");
+        doc.setFont("Roboto", "bold");
         doc.text("Daylio Journal", margin, y);
         y += 12;
         doc.setFontSize(10);
-        doc.setFont("helvetica", "normal");
+        doc.setFont("Roboto", "normal");
         doc.setTextColor(100);
         doc.text(`Exported on ${(/* @__PURE__ */ new Date()).toLocaleDateString()}`, margin, y);
         doc.setTextColor(0);
@@ -2119,14 +2136,14 @@ Do you want to continue anyway?`
             currentMonth = -1;
             y += 5;
             doc.setFontSize(18);
-            doc.setFont("helvetica", "bold");
+            doc.setFont("Roboto", "bold");
             doc.text(String(currentYear), margin, y);
             y += 8;
           }
           if (entry.month !== currentMonth) {
             currentMonth = entry.month;
             doc.setFontSize(14);
-            doc.setFont("helvetica", "bold");
+            doc.setFont("Roboto", "bold");
             doc.setTextColor(80);
             doc.text(months[currentMonth], margin, y);
             doc.setTextColor(0);
@@ -2141,9 +2158,9 @@ Do you want to continue anyway?`
           const time = `${String(entry.hour).padStart(2, "0")}:${String(entry.minute).padStart(2, "0")}`;
           const mood = this.getMoodLabel(entry.mood);
           doc.setFontSize(11);
-          doc.setFont("helvetica", "bold");
+          doc.setFont("Roboto", "bold");
           doc.text(`${months[entry.month]} ${entry.day}, ${weekday}`, margin, y);
-          doc.setFont("helvetica", "normal");
+          doc.setFont("Roboto", "normal");
           doc.setTextColor(100);
           doc.text(`${time} \u2022 ${mood}`, margin + 50, y);
           doc.setTextColor(0);
@@ -2160,11 +2177,11 @@ Do you want to continue anyway?`
           }
           if (entry.note_title?.trim()) {
             doc.setFontSize(10);
-            doc.setFont("helvetica", "bold");
+            doc.setFont("Roboto", "bold");
             const titleLines = doc.splitTextToSize(entry.note_title.trim(), contentWidth);
             doc.text(titleLines, margin, y);
             y += titleLines.length * 4 + 1;
-            doc.setFont("helvetica", "normal");
+            doc.setFont("Roboto", "normal");
           }
           if (entry.note) {
             const plainText = this.htmlToPlainText(entry.note);

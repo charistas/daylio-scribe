@@ -2390,6 +2390,15 @@ class DaylioScribe {
         return btoa(binaryString);
     }
 
+    private arrayBufferToBase64(buffer: ArrayBuffer): string {
+        const bytes = new Uint8Array(buffer);
+        let binaryString = '';
+        for (let i = 0; i < bytes.length; i++) {
+            binaryString += String.fromCharCode(bytes[i]);
+        }
+        return btoa(binaryString);
+    }
+
     private async saveBackup(): Promise<void> {
         if (!this.data) return;
 
@@ -2658,6 +2667,9 @@ class DaylioScribe {
                 return;
             }
 
+            // Show loading state
+            this.showToast('info', 'Generating PDF', 'Loading fonts...');
+
             const sortedEntries = [...this.entries].sort((a, b) => b.datetime - a.datetime);
             const months = ['January', 'February', 'March', 'April', 'May', 'June',
                            'July', 'August', 'September', 'October', 'November', 'December'];
@@ -2666,6 +2678,19 @@ class DaylioScribe {
             // Create PDF using jsPDF
             const { jsPDF } = jspdf;
             const doc = new jsPDF('p', 'mm', 'a4');
+
+            // Load Roboto fonts for Unicode support (Greek, etc.)
+            const [robotoRegular, robotoBold] = await Promise.all([
+                fetch('vendor/Roboto-Regular.ttf').then(r => r.arrayBuffer()),
+                fetch('vendor/Roboto-Bold.ttf').then(r => r.arrayBuffer())
+            ]);
+
+            // Add fonts to jsPDF
+            doc.addFileToVFS('Roboto-Regular.ttf', this.arrayBufferToBase64(robotoRegular));
+            doc.addFileToVFS('Roboto-Bold.ttf', this.arrayBufferToBase64(robotoBold));
+            doc.addFont('Roboto-Regular.ttf', 'Roboto', 'normal');
+            doc.addFont('Roboto-Bold.ttf', 'Roboto', 'bold');
+
             const pageWidth = doc.internal.pageSize.getWidth();
             const pageHeight = doc.internal.pageSize.getHeight();
             const margin = 15;
@@ -2674,12 +2699,12 @@ class DaylioScribe {
 
             // Title
             doc.setFontSize(24);
-            doc.setFont('helvetica', 'bold');
+            doc.setFont('Roboto', 'bold');
             doc.text('Daylio Journal', margin, y);
             y += 12;
 
             doc.setFontSize(10);
-            doc.setFont('helvetica', 'normal');
+            doc.setFont('Roboto', 'normal');
             doc.setTextColor(100);
             doc.text(`Exported on ${new Date().toLocaleDateString()}`, margin, y);
             doc.setTextColor(0);
@@ -2701,7 +2726,7 @@ class DaylioScribe {
                     currentMonth = -1;
                     y += 5;
                     doc.setFontSize(18);
-                    doc.setFont('helvetica', 'bold');
+                    doc.setFont('Roboto', 'bold');
                     doc.text(String(currentYear), margin, y);
                     y += 8;
                 }
@@ -2710,7 +2735,7 @@ class DaylioScribe {
                 if (entry.month !== currentMonth) {
                     currentMonth = entry.month;
                     doc.setFontSize(14);
-                    doc.setFont('helvetica', 'bold');
+                    doc.setFont('Roboto', 'bold');
                     doc.setTextColor(80);
                     doc.text(months[currentMonth], margin, y);
                     doc.setTextColor(0);
@@ -2730,10 +2755,10 @@ class DaylioScribe {
                 const mood = this.getMoodLabel(entry.mood);
 
                 doc.setFontSize(11);
-                doc.setFont('helvetica', 'bold');
+                doc.setFont('Roboto', 'bold');
                 doc.text(`${months[entry.month]} ${entry.day}, ${weekday}`, margin, y);
 
-                doc.setFont('helvetica', 'normal');
+                doc.setFont('Roboto', 'normal');
                 doc.setTextColor(100);
                 doc.text(`${time} • ${mood}`, margin + 50, y);
                 doc.setTextColor(0);
@@ -2754,11 +2779,11 @@ class DaylioScribe {
                 // Title
                 if (entry.note_title?.trim()) {
                     doc.setFontSize(10);
-                    doc.setFont('helvetica', 'bold');
+                    doc.setFont('Roboto', 'bold');
                     const titleLines = doc.splitTextToSize(entry.note_title.trim(), contentWidth);
                     doc.text(titleLines, margin, y);
                     y += titleLines.length * 4 + 1;
-                    doc.setFont('helvetica', 'normal');
+                    doc.setFont('Roboto', 'normal');
                 }
 
                 // Note content

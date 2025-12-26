@@ -63,6 +63,7 @@
                     <label class="checkbox-label">
                         <input type="checkbox" id="filterNotes"> Show only entries with notes
                     </label>
+                    <button id="insightsBtn" class="btn btn-secondary">📊 Insights</button>
                     <button id="exportCsvBtn" class="btn btn-secondary">Export CSV</button>
                     <button id="saveBtn" class="btn btn-primary">Download Backup</button>
                 </div>
@@ -151,6 +152,69 @@
             <img id="lightboxImage" src="" alt="Photo">
             <button class="lightbox-nav lightbox-next" id="lightboxNext" aria-label="Next photo">&#10095;</button>
             <div class="lightbox-counter" id="lightboxCounter" aria-live="polite">1 / 1</div>
+        </div>
+    </div>
+
+    <!-- Insights Dashboard Modal -->
+    <div id="insightsModal" class="insights-modal hidden" role="dialog" aria-modal="true" aria-label="Insights Dashboard">
+        <div class="insights-overlay"></div>
+        <div class="insights-content">
+            <div class="insights-header">
+                <h2>📊 Insights</h2>
+                <button class="insights-close" id="insightsClose" aria-label="Close insights">&times;</button>
+            </div>
+            <div class="insights-body">
+                <!-- Quick Stats -->
+                <div class="insights-section">
+                    <h3>Quick Stats</h3>
+                    <div class="stats-grid" id="quickStats">
+                        <div class="stat-card">
+                            <span class="stat-value" id="statTotalEntries">0</span>
+                            <span class="stat-label">Total Entries</span>
+                        </div>
+                        <div class="stat-card">
+                            <span class="stat-value" id="statCurrentStreak">0</span>
+                            <span class="stat-label">Current Streak</span>
+                        </div>
+                        <div class="stat-card">
+                            <span class="stat-value" id="statLongestStreak">0</span>
+                            <span class="stat-label">Longest Streak</span>
+                        </div>
+                        <div class="stat-card">
+                            <span class="stat-value" id="statAvgMood">-</span>
+                            <span class="stat-label">Average Mood</span>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Year in Pixels -->
+                <div class="insights-section">
+                    <h3>Year in Pixels</h3>
+                    <div class="year-navigation">
+                        <button class="year-nav-btn" id="prevYear" aria-label="Previous year">◀</button>
+                        <span class="year-label" id="yearLabel">2025</span>
+                        <button class="year-nav-btn" id="nextYear" aria-label="Next year">▶</button>
+                    </div>
+                    <div class="year-pixels-container">
+                        <div class="month-labels" id="monthLabels"></div>
+                        <div class="year-pixels-grid" id="yearPixelsGrid"></div>
+                    </div>
+                    <div class="mood-legend">
+                        <span class="legend-item"><span class="legend-color mood-1"></span> Great</span>
+                        <span class="legend-item"><span class="legend-color mood-2"></span> Good</span>
+                        <span class="legend-item"><span class="legend-color mood-3"></span> Meh</span>
+                        <span class="legend-item"><span class="legend-color mood-4"></span> Bad</span>
+                        <span class="legend-item"><span class="legend-color mood-5"></span> Awful</span>
+                        <span class="legend-item"><span class="legend-color mood-empty"></span> No entry</span>
+                    </div>
+                </div>
+
+                <!-- Mood Breakdown -->
+                <div class="insights-section">
+                    <h3>Mood Breakdown</h3>
+                    <div class="mood-breakdown" id="moodBreakdown"></div>
+                </div>
+            </div>
         </div>
     </div>
 

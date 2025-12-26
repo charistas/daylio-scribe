@@ -103,6 +103,23 @@ class DaylioScribe {
     private emojiPicker!: HTMLElement;
     private themeToggle!: HTMLButtonElement;
 
+    // Insights modal elements
+    private insightsBtn!: HTMLButtonElement;
+    private insightsModal!: HTMLElement;
+    private insightsClose!: HTMLButtonElement;
+    private insightsOverlay!: HTMLElement;
+    private statTotalEntries!: HTMLElement;
+    private statCurrentStreak!: HTMLElement;
+    private statLongestStreak!: HTMLElement;
+    private statAvgMood!: HTMLElement;
+    private yearLabel!: HTMLElement;
+    private prevYearBtn!: HTMLButtonElement;
+    private nextYearBtn!: HTMLButtonElement;
+    private yearPixelsGrid!: HTMLElement;
+    private monthLabels!: HTMLElement;
+    private moodBreakdown!: HTMLElement;
+    private insightsYear: number = new Date().getFullYear();
+
     constructor() {
         this.initTheme();
         this.initElements();
@@ -179,6 +196,22 @@ class DaylioScribe {
         this.lightboxPrev = document.getElementById('lightboxPrev')!;
         this.lightboxNext = document.getElementById('lightboxNext')!;
         this.themeToggle = document.getElementById('themeToggle') as HTMLButtonElement;
+
+        // Insights modal
+        this.insightsBtn = document.getElementById('insightsBtn') as HTMLButtonElement;
+        this.insightsModal = document.getElementById('insightsModal')!;
+        this.insightsClose = document.getElementById('insightsClose') as HTMLButtonElement;
+        this.insightsOverlay = this.insightsModal.querySelector('.insights-overlay')!;
+        this.statTotalEntries = document.getElementById('statTotalEntries')!;
+        this.statCurrentStreak = document.getElementById('statCurrentStreak')!;
+        this.statLongestStreak = document.getElementById('statLongestStreak')!;
+        this.statAvgMood = document.getElementById('statAvgMood')!;
+        this.yearLabel = document.getElementById('yearLabel')!;
+        this.prevYearBtn = document.getElementById('prevYear') as HTMLButtonElement;
+        this.nextYearBtn = document.getElementById('nextYear') as HTMLButtonElement;
+        this.yearPixelsGrid = document.getElementById('yearPixelsGrid')!;
+        this.monthLabels = document.getElementById('monthLabels')!;
+        this.moodBreakdown = document.getElementById('moodBreakdown')!;
     }
 
     private initQuill(): void {
@@ -324,6 +357,17 @@ class DaylioScribe {
 
     private bindEvents(): void {
         this.themeToggle.addEventListener('click', () => this.toggleTheme());
+
+        // Insights modal
+        this.insightsBtn.addEventListener('click', () => this.openInsights());
+        this.insightsClose.addEventListener('click', () => this.closeInsights());
+        this.insightsOverlay.addEventListener('click', () => this.closeInsights());
+        this.prevYearBtn.addEventListener('click', () => this.changeInsightsYear(-1));
+        this.nextYearBtn.addEventListener('click', () => this.changeInsightsYear(1));
+        this.insightsModal.addEventListener('keydown', (e) => {
+            if (e.key === 'Escape') this.closeInsights();
+        });
+
         this.dropzone.addEventListener('click', () => this.fileInput.click());
         this.fileInput.addEventListener('change', (e) => {
             const target = e.target as HTMLInputElement;
@@ -1300,6 +1344,261 @@ class DaylioScribe {
         const hasMultiple = this.currentEntryPhotos.length > 1;
         this.lightboxPrev.style.display = hasMultiple ? '' : 'none';
         this.lightboxNext.style.display = hasMultiple ? '' : 'none';
+    }
+
+    // ==================== Insights Dashboard ====================
+
+    private openInsights(): void {
+        this.insightsModal.classList.remove('hidden');
+        document.body.style.overflow = 'hidden';
+        this.insightsClose.focus();
+
+        // Determine year to show (most recent entry year or current year)
+        if (this.entries.length > 0) {
+            this.insightsYear = new Date(this.entries[0].datetime).getFullYear();
+        } else {
+            this.insightsYear = new Date().getFullYear();
+        }
+
+        this.renderInsights();
+    }
+
+    private closeInsights(): void {
+        this.insightsModal.classList.add('hidden');
+        document.body.style.overflow = '';
+        this.insightsBtn.focus();
+    }
+
+    private changeInsightsYear(delta: number): void {
+        this.insightsYear += delta;
+        this.yearLabel.textContent = String(this.insightsYear);
+        this.renderYearPixels();
+    }
+
+    private renderInsights(): void {
+        this.renderQuickStats();
+        this.renderYearPixels();
+        this.renderMoodBreakdown();
+    }
+
+    private renderQuickStats(): void {
+        // Total entries
+        this.statTotalEntries.textContent = String(this.entries.length);
+
+        // Calculate streaks
+        const { currentStreak, longestStreak } = this.calculateStreaks();
+        this.statCurrentStreak.textContent = `${currentStreak} days`;
+        this.statLongestStreak.textContent = `${longestStreak} days`;
+
+        // Average mood
+        if (this.entries.length > 0) {
+            let totalMoodGroup = 0;
+            let count = 0;
+            for (const entry of this.entries) {
+                const moodGroup = this.getMoodGroupId(entry.mood);
+                if (moodGroup >= 1 && moodGroup <= 5) {
+                    totalMoodGroup += moodGroup;
+                    count++;
+                }
+            }
+            if (count > 0) {
+                const avg = totalMoodGroup / count;
+                // Convert to 5-star scale (1=awful to 5=great, so invert: 6 - avg)
+                const starRating = (6 - avg).toFixed(1);
+                this.statAvgMood.textContent = `${starRating}/5`;
+            } else {
+                this.statAvgMood.textContent = '-';
+            }
+        } else {
+            this.statAvgMood.textContent = '-';
+        }
+    }
+
+    private calculateStreaks(): { currentStreak: number; longestStreak: number } {
+        if (this.entries.length === 0) {
+            return { currentStreak: 0, longestStreak: 0 };
+        }
+
+        // Create a set of all entry dates (as date strings)
+        // Use datetime (timestamp) for reliable date extraction
+        const entryDates = new Set<string>();
+        for (const entry of this.entries) {
+            const date = new Date(entry.datetime);
+            const dateStr = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`;
+            entryDates.add(dateStr);
+        }
+
+        // Sort unique dates
+        const sortedDates = Array.from(entryDates).sort().reverse();
+
+        // Calculate current streak (from today backwards)
+        const today = new Date();
+        let currentStreak = 0;
+        let checkDate = new Date(today);
+
+        while (true) {
+            const dateStr = `${checkDate.getFullYear()}-${String(checkDate.getMonth() + 1).padStart(2, '0')}-${String(checkDate.getDate()).padStart(2, '0')}`;
+            if (entryDates.has(dateStr)) {
+                currentStreak++;
+                checkDate.setDate(checkDate.getDate() - 1);
+            } else if (currentStreak === 0) {
+                // Allow starting from yesterday if no entry today
+                checkDate.setDate(checkDate.getDate() - 1);
+                const yesterdayStr = `${checkDate.getFullYear()}-${String(checkDate.getMonth() + 1).padStart(2, '0')}-${String(checkDate.getDate()).padStart(2, '0')}`;
+                if (!entryDates.has(yesterdayStr)) {
+                    break;
+                }
+            } else {
+                break;
+            }
+        }
+
+        // Calculate longest streak
+        let longestStreak = 0;
+        let streak = 0;
+        let prevDate: Date | null = null;
+
+        for (const dateStr of sortedDates) {
+            const [year, month, day] = dateStr.split('-').map(Number);
+            const currentDate = new Date(year, month - 1, day);
+
+            if (prevDate === null) {
+                streak = 1;
+            } else {
+                const diffDays = Math.round((prevDate.getTime() - currentDate.getTime()) / (1000 * 60 * 60 * 24));
+                if (diffDays === 1) {
+                    streak++;
+                } else {
+                    longestStreak = Math.max(longestStreak, streak);
+                    streak = 1;
+                }
+            }
+            prevDate = currentDate;
+        }
+        longestStreak = Math.max(longestStreak, streak);
+
+        return { currentStreak, longestStreak };
+    }
+
+    private renderYearPixels(): void {
+        this.yearLabel.textContent = String(this.insightsYear);
+
+        // Build a map of date -> mood for the selected year
+        // Use datetime (timestamp) for reliable date extraction
+        const moodMap = new Map<string, number>();
+        for (const entry of this.entries) {
+            const date = new Date(entry.datetime);
+            if (date.getFullYear() === this.insightsYear) {
+                const key = `${date.getMonth()}-${date.getDate()}`;
+                // Keep the first entry of the day (or best mood if multiple)
+                if (!moodMap.has(key)) {
+                    moodMap.set(key, this.getMoodGroupId(entry.mood));
+                }
+            }
+        }
+
+        // Render month labels
+        const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+        this.monthLabels.innerHTML = months
+            .map(m => `<div class="month-label">${m}</div>`)
+            .join('');
+
+        // Render pixel grid (12 rows x up to 31 columns)
+        const daysInMonth = [31, 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31];
+
+        // Check for leap year
+        if ((this.insightsYear % 4 === 0 && this.insightsYear % 100 !== 0) || this.insightsYear % 400 === 0) {
+            daysInMonth[1] = 29;
+        }
+
+        let html = '';
+        for (let month = 0; month < 12; month++) {
+            for (let day = 1; day <= 31; day++) {
+                const key = `${month}-${day}`;
+                const moodGroup = moodMap.get(key);
+
+                if (day <= daysInMonth[month]) {
+                    const moodClass = moodGroup ? `mood-${moodGroup}` : 'empty';
+                    const dateStr = `${months[month]} ${day}, ${this.insightsYear}`;
+                    const moodLabel = moodGroup ? this.getMoodLabelByGroup(moodGroup) : 'No entry';
+                    html += `<div class="pixel ${moodClass}" title="${dateStr}: ${moodLabel}" data-month="${month}" data-day="${day}"></div>`;
+                } else {
+                    // Empty placeholder for grid alignment
+                    html += `<div class="pixel" style="visibility: hidden;"></div>`;
+                }
+            }
+        }
+
+        this.yearPixelsGrid.innerHTML = html;
+
+        // Add click handlers to jump to entry
+        this.yearPixelsGrid.querySelectorAll('.pixel:not(.empty)').forEach(pixel => {
+            pixel.addEventListener('click', (e) => {
+                const target = e.target as HTMLElement;
+                const month = parseInt(target.dataset.month || '0');
+                const day = parseInt(target.dataset.day || '1');
+                this.jumpToDate(this.insightsYear, month, day);
+            });
+        });
+    }
+
+    private getMoodLabelByGroup(groupId: number): string {
+        const labels = ['', 'Great', 'Good', 'Meh', 'Bad', 'Awful'];
+        return labels[groupId] || '';
+    }
+
+    private jumpToDate(year: number, month: number, day: number): void {
+        // Find entry for this date using datetime
+        const entry = this.entries.find(e => {
+            const d = new Date(e.datetime);
+            return d.getFullYear() === year && d.getMonth() === month && d.getDate() === day;
+        });
+        if (entry) {
+            const index = this.entries.indexOf(entry);
+            this.closeInsights();
+            this.selectEntry(index);
+
+            // Scroll to the entry in the list
+            this.scrollToEntry(this.filteredEntries.indexOf(entry));
+        }
+    }
+
+    private renderMoodBreakdown(): void {
+        // Count moods by group
+        const moodCounts: Record<number, number> = { 1: 0, 2: 0, 3: 0, 4: 0, 5: 0 };
+        let total = 0;
+
+        for (const entry of this.entries) {
+            const groupId = this.getMoodGroupId(entry.mood);
+            if (groupId >= 1 && groupId <= 5) {
+                moodCounts[groupId]++;
+                total++;
+            }
+        }
+
+        if (total === 0) {
+            this.moodBreakdown.innerHTML = '<p style="color: var(--text-secondary);">No mood data available</p>';
+            return;
+        }
+
+        const labels = ['', 'Great', 'Good', 'Meh', 'Bad', 'Awful'];
+        let html = '';
+
+        for (let i = 1; i <= 5; i++) {
+            const count = moodCounts[i];
+            const percent = ((count / total) * 100).toFixed(1);
+            html += `
+                <div class="mood-bar-row">
+                    <span class="mood-bar-label">${labels[i]}</span>
+                    <div class="mood-bar-container">
+                        <div class="mood-bar mood-${i}" style="width: ${percent}%"></div>
+                    </div>
+                    <span class="mood-bar-percent">${percent}%</span>
+                </div>
+            `;
+        }
+
+        this.moodBreakdown.innerHTML = html;
     }
 
     private updateCurrentEntry(): void {

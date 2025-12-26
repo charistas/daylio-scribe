@@ -7,6 +7,7 @@ import type { DaylioBackup, DayEntry, CustomMood, Asset, MoodInfo, DateRange, Vi
 // Declare external globals (loaded via script tags)
 declare const Quill: any;
 declare const JSZip: any;
+declare const html2canvas: (element: HTMLElement, options?: any) => Promise<HTMLCanvasElement>;
 
 // Highest Daylio backup version tested with this app
 const SUPPORTED_VERSION = 19;
@@ -119,6 +120,15 @@ class DaylioScribe {
     private monthLabels!: HTMLElement;
     private moodBreakdown!: HTMLElement;
     private insightsYear: number = new Date().getFullYear();
+    // New insights elements
+    private insightsDateRange!: HTMLSelectElement;
+    private insightsActivity!: HTMLSelectElement;
+    private filterSummary!: HTMLElement;
+    private moodTrendsChart!: SVGElement;
+    private topActivities!: HTMLElement;
+    private entriesPerMonth!: HTMLElement;
+    private exportInsightsBtn!: HTMLButtonElement;
+    private insightsFilteredEntries: DayEntry[] = [];
 
     constructor() {
         this.initTheme();
@@ -212,6 +222,13 @@ class DaylioScribe {
         this.yearPixelsGrid = document.getElementById('yearPixelsGrid')!;
         this.monthLabels = document.getElementById('monthLabels')!;
         this.moodBreakdown = document.getElementById('moodBreakdown')!;
+        this.insightsDateRange = document.getElementById('insightsDateRange') as HTMLSelectElement;
+        this.insightsActivity = document.getElementById('insightsActivity') as HTMLSelectElement;
+        this.filterSummary = document.getElementById('filterSummary')!;
+        this.moodTrendsChart = document.getElementById('moodTrendsChart') as unknown as SVGElement;
+        this.topActivities = document.getElementById('topActivities')!;
+        this.entriesPerMonth = document.getElementById('entriesPerMonth')!;
+        this.exportInsightsBtn = document.getElementById('exportInsightsBtn') as HTMLButtonElement;
     }
 
     private initQuill(): void {
@@ -367,6 +384,9 @@ class DaylioScribe {
         this.insightsModal.addEventListener('keydown', (e) => {
             if (e.key === 'Escape') this.closeInsights();
         });
+        this.insightsDateRange.addEventListener('change', () => this.applyInsightsFilters());
+        this.insightsActivity.addEventListener('change', () => this.applyInsightsFilters());
+        this.exportInsightsBtn.addEventListener('click', () => this.exportInsights());
 
         this.dropzone.addEventListener('click', () => this.fileInput.click());
         this.fileInput.addEventListener('change', (e) => {
@@ -1360,6 +1380,97 @@ class DaylioScribe {
             this.insightsYear = new Date().getFullYear();
         }
 
+        // Populate activity dropdown
+        this.populateActivityDropdown();
+
+        // Reset filters and apply
+        this.insightsDateRange.value = 'all';
+        this.insightsActivity.value = 'all';
+        this.applyInsightsFilters();
+    }
+
+    private populateActivityDropdown(): void {
+        // Get all unique activities from entries, sorted by frequency
+        const activityCounts: Record<number, number> = {};
+        for (const entry of this.entries) {
+            for (const tagId of entry.tags || []) {
+                activityCounts[tagId] = (activityCounts[tagId] || 0) + 1;
+            }
+        }
+
+        // Sort by count descending
+        const sortedActivities = Object.entries(activityCounts)
+            .map(([id, count]) => ({ id: Number(id), count }))
+            .sort((a, b) => b.count - a.count);
+
+        // Build options
+        let html = '<option value="all">All Activities</option>';
+        for (const { id } of sortedActivities) {
+            const name = this.tags[id] || `Activity ${id}`;
+            html += `<option value="${id}">${this.escapeHtml(name)}</option>`;
+        }
+        this.insightsActivity.innerHTML = html;
+    }
+
+    private applyInsightsFilters(): void {
+        const dateRange = this.insightsDateRange.value;
+        const activityId = this.insightsActivity.value;
+
+        // Start with all entries
+        let filtered = [...this.entries];
+
+        // Apply date range filter
+        if (dateRange !== 'all') {
+            const now = new Date();
+            let startDate: Date;
+            let endDate: Date = now;
+
+            switch (dateRange) {
+                case 'thisMonth':
+                    startDate = new Date(now.getFullYear(), now.getMonth(), 1);
+                    break;
+                case 'last30':
+                    startDate = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000);
+                    break;
+                case 'last3Months':
+                    startDate = new Date(now.getFullYear(), now.getMonth() - 3, now.getDate());
+                    break;
+                case 'thisYear':
+                    startDate = new Date(now.getFullYear(), 0, 1);
+                    break;
+                case 'lastYear':
+                    startDate = new Date(now.getFullYear() - 1, 0, 1);
+                    endDate = new Date(now.getFullYear() - 1, 11, 31, 23, 59, 59);
+                    break;
+                default:
+                    startDate = new Date(0);
+            }
+
+            filtered = filtered.filter(entry => {
+                const entryDate = new Date(entry.datetime);
+                return entryDate >= startDate && entryDate <= endDate;
+            });
+        }
+
+        // Apply activity filter
+        if (activityId !== 'all') {
+            const tagId = Number(activityId);
+            filtered = filtered.filter(entry =>
+                (entry.tags || []).includes(tagId)
+            );
+        }
+
+        this.insightsFilteredEntries = filtered;
+
+        // Update filter summary
+        const total = this.entries.length;
+        const showing = filtered.length;
+        if (showing === total) {
+            this.filterSummary.textContent = `Showing all ${total} entries`;
+        } else {
+            this.filterSummary.textContent = `Showing ${showing} of ${total} entries`;
+        }
+
         this.renderInsights();
     }
 
@@ -1367,6 +1478,61 @@ class DaylioScribe {
         this.insightsModal.classList.add('hidden');
         document.body.style.overflow = '';
         this.insightsBtn.focus();
+    }
+
+    private async exportInsights(): Promise<void> {
+        const insightsBody = this.insightsModal.querySelector('.insights-body') as HTMLElement;
+        if (!insightsBody) return;
+
+        // Show loading state
+        const originalText = this.exportInsightsBtn.textContent;
+        this.exportInsightsBtn.textContent = 'Exporting...';
+        this.exportInsightsBtn.disabled = true;
+
+        try {
+            // Use html2canvas to capture the insights body
+            const canvas = await html2canvas(insightsBody, {
+                backgroundColor: getComputedStyle(document.documentElement).getPropertyValue('--bg-primary').trim() || '#1a1a2e',
+                scale: 2, // Higher resolution
+                logging: false,
+                useCORS: true,
+                allowTaint: true
+            });
+
+            // Convert to blob and download
+            canvas.toBlob((blob) => {
+                if (!blob) {
+                    this.showToast('Failed to generate image', 'error');
+                    return;
+                }
+
+                const url = URL.createObjectURL(blob);
+                const link = document.createElement('a');
+                link.href = url;
+
+                // Generate filename with date range info
+                const dateRange = this.insightsDateRange.value;
+                const activity = this.insightsActivity.value !== 'all'
+                    ? `_${this.tags[Number(this.insightsActivity.value)] || 'activity'}`
+                    : '';
+                const timestamp = new Date().toISOString().slice(0, 10);
+                link.download = `daylio-insights_${dateRange}${activity}_${timestamp}.png`;
+
+                document.body.appendChild(link);
+                link.click();
+                document.body.removeChild(link);
+                URL.revokeObjectURL(url);
+
+                this.showToast('Insights exported successfully', 'success');
+            }, 'image/png');
+        } catch (error) {
+            console.error('Export failed:', error);
+            this.showToast('Failed to export insights', 'error');
+        } finally {
+            // Restore button state
+            this.exportInsightsBtn.textContent = originalText;
+            this.exportInsightsBtn.disabled = false;
+        }
     }
 
     private changeInsightsYear(delta: number): void {
@@ -1379,22 +1545,27 @@ class DaylioScribe {
         this.renderQuickStats();
         this.renderYearPixels();
         this.renderMoodBreakdown();
+        this.renderMoodTrends();
+        this.renderTopActivities();
+        this.renderEntriesPerMonth();
     }
 
     private renderQuickStats(): void {
+        const entries = this.insightsFilteredEntries;
+
         // Total entries
-        this.statTotalEntries.textContent = String(this.entries.length);
+        this.statTotalEntries.textContent = String(entries.length);
 
         // Calculate streaks
-        const { currentStreak, longestStreak } = this.calculateStreaks();
+        const { currentStreak, longestStreak } = this.calculateStreaks(entries);
         this.statCurrentStreak.textContent = `${currentStreak} days`;
         this.statLongestStreak.textContent = `${longestStreak} days`;
 
         // Average mood
-        if (this.entries.length > 0) {
+        if (entries.length > 0) {
             let totalMoodGroup = 0;
             let count = 0;
-            for (const entry of this.entries) {
+            for (const entry of entries) {
                 const moodGroup = this.getMoodGroupId(entry.mood);
                 if (moodGroup >= 1 && moodGroup <= 5) {
                     totalMoodGroup += moodGroup;
@@ -1414,15 +1585,15 @@ class DaylioScribe {
         }
     }
 
-    private calculateStreaks(): { currentStreak: number; longestStreak: number } {
-        if (this.entries.length === 0) {
+    private calculateStreaks(entries: DayEntry[]): { currentStreak: number; longestStreak: number } {
+        if (entries.length === 0) {
             return { currentStreak: 0, longestStreak: 0 };
         }
 
         // Create a set of all entry dates (as date strings)
         // Use datetime (timestamp) for reliable date extraction
         const entryDates = new Set<string>();
-        for (const entry of this.entries) {
+        for (const entry of entries) {
             const date = new Date(entry.datetime);
             const dateStr = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`;
             entryDates.add(dateStr);
@@ -1486,7 +1657,7 @@ class DaylioScribe {
         // Build a map of date -> mood for the selected year
         // Use datetime (timestamp) for reliable date extraction
         const moodMap = new Map<string, number>();
-        for (const entry of this.entries) {
+        for (const entry of this.insightsFilteredEntries) {
             const date = new Date(entry.datetime);
             if (date.getFullYear() === this.insightsYear) {
                 const key = `${date.getMonth()}-${date.getDate()}`;
@@ -1568,7 +1739,7 @@ class DaylioScribe {
         const moodCounts: Record<number, number> = { 1: 0, 2: 0, 3: 0, 4: 0, 5: 0 };
         let total = 0;
 
-        for (const entry of this.entries) {
+        for (const entry of this.insightsFilteredEntries) {
             const groupId = this.getMoodGroupId(entry.mood);
             if (groupId >= 1 && groupId <= 5) {
                 moodCounts[groupId]++;
@@ -1599,6 +1770,267 @@ class DaylioScribe {
         }
 
         this.moodBreakdown.innerHTML = html;
+    }
+
+    private renderMoodTrends(): void {
+        const entries = this.insightsFilteredEntries;
+
+        if (entries.length < 2) {
+            this.moodTrendsChart.innerHTML = '<text x="300" y="100" text-anchor="middle" class="axis-label">Not enough data for trends</text>';
+            return;
+        }
+
+        // Group entries by week and calculate average mood
+        const weeklyMoods: { week: string; avg: number; count: number }[] = [];
+        const weekMap = new Map<string, { total: number; count: number }>();
+
+        // Sort entries chronologically
+        const sorted = [...entries].sort((a, b) => a.datetime - b.datetime);
+
+        for (const entry of sorted) {
+            const date = new Date(entry.datetime);
+            // Get week start (Monday)
+            const day = date.getDay();
+            const diff = date.getDate() - day + (day === 0 ? -6 : 1);
+            const weekStart = new Date(date.setDate(diff));
+            const weekKey = `${weekStart.getFullYear()}-${String(weekStart.getMonth() + 1).padStart(2, '0')}-${String(weekStart.getDate()).padStart(2, '0')}`;
+
+            const moodGroup = this.getMoodGroupId(entry.mood);
+            if (moodGroup >= 1 && moodGroup <= 5) {
+                const existing = weekMap.get(weekKey) || { total: 0, count: 0 };
+                existing.total += (6 - moodGroup); // Invert: 1=awful(1) to 5=great(5)
+                existing.count++;
+                weekMap.set(weekKey, existing);
+            }
+        }
+
+        // Convert to array and calculate averages
+        for (const [week, data] of weekMap) {
+            weeklyMoods.push({
+                week,
+                avg: data.total / data.count,
+                count: data.count
+            });
+        }
+
+        // Sort by week
+        weeklyMoods.sort((a, b) => a.week.localeCompare(b.week));
+
+        // Limit to last 52 weeks if more data
+        const displayData = weeklyMoods.slice(-52);
+
+        if (displayData.length < 2) {
+            this.moodTrendsChart.innerHTML = '<text x="300" y="100" text-anchor="middle" class="axis-label">Not enough data for trends</text>';
+            return;
+        }
+
+        // SVG dimensions
+        const width = 600;
+        const height = 200;
+        const padding = { top: 20, right: 20, bottom: 30, left: 40 };
+        const chartWidth = width - padding.left - padding.right;
+        const chartHeight = height - padding.top - padding.bottom;
+
+        // Scale functions
+        const xScale = (i: number) => padding.left + (i / (displayData.length - 1)) * chartWidth;
+        const yScale = (v: number) => padding.top + chartHeight - ((v - 1) / 4) * chartHeight;
+
+        // Build SVG content
+        let svg = '';
+
+        // Grid lines
+        for (let i = 1; i <= 5; i++) {
+            const y = yScale(i);
+            svg += `<line x1="${padding.left}" y1="${y}" x2="${width - padding.right}" y2="${y}" class="grid-line"/>`;
+            svg += `<text x="${padding.left - 5}" y="${y + 3}" text-anchor="end" class="mood-label">${i}</text>`;
+        }
+
+        // Y-axis labels
+        svg += `<text x="${padding.left - 25}" y="${height / 2}" text-anchor="middle" transform="rotate(-90, ${padding.left - 25}, ${height / 2})" class="axis-label">Mood</text>`;
+
+        // Build line path
+        let pathD = '';
+        let areaD = '';
+        const points: string[] = [];
+
+        for (let i = 0; i < displayData.length; i++) {
+            const x = xScale(i);
+            const y = yScale(displayData[i].avg);
+            if (i === 0) {
+                pathD = `M ${x} ${y}`;
+                areaD = `M ${x} ${padding.top + chartHeight} L ${x} ${y}`;
+            } else {
+                pathD += ` L ${x} ${y}`;
+                areaD += ` L ${x} ${y}`;
+            }
+            points.push(`<circle cx="${x}" cy="${y}" r="4" class="data-point" title="${displayData[i].week}: ${displayData[i].avg.toFixed(1)}/5"/>`);
+        }
+
+        // Close area path
+        areaD += ` L ${xScale(displayData.length - 1)} ${padding.top + chartHeight} Z`;
+
+        svg += `<path d="${areaD}" class="trend-area"/>`;
+        svg += `<path d="${pathD}" class="trend-line"/>`;
+        svg += points.join('');
+
+        // X-axis labels (show first, middle, last)
+        const labelIndices = [0, Math.floor(displayData.length / 2), displayData.length - 1];
+        for (const i of labelIndices) {
+            const x = xScale(i);
+            const label = displayData[i].week.slice(5); // MM-DD format
+            svg += `<text x="${x}" y="${height - 5}" text-anchor="middle" class="axis-label">${label}</text>`;
+        }
+
+        this.moodTrendsChart.innerHTML = svg;
+    }
+
+    private renderTopActivities(): void {
+        const entries = this.insightsFilteredEntries;
+        const selectedActivityId = this.insightsActivity.value;
+        const isFilteredByActivity = selectedActivityId !== 'all';
+
+        // Count activities and their mood associations
+        const activityStats: Record<number, { count: number; moodTotal: number }> = {};
+
+        for (const entry of entries) {
+            const moodGroup = this.getMoodGroupId(entry.mood);
+            const moodScore = moodGroup >= 1 && moodGroup <= 5 ? (6 - moodGroup) : 0;
+
+            for (const tagId of entry.tags || []) {
+                // Skip the selected activity when filtering by activity (show co-occurring only)
+                if (isFilteredByActivity && tagId === Number(selectedActivityId)) {
+                    continue;
+                }
+
+                if (!activityStats[tagId]) {
+                    activityStats[tagId] = { count: 0, moodTotal: 0 };
+                }
+                activityStats[tagId].count++;
+                if (moodScore > 0) {
+                    activityStats[tagId].moodTotal += moodScore;
+                }
+            }
+        }
+
+        // Sort by count descending
+        const sorted = Object.entries(activityStats)
+            .map(([id, stats]) => ({
+                id: Number(id),
+                name: this.tags[Number(id)] || `Activity ${id}`,
+                count: stats.count,
+                avgMood: stats.moodTotal / stats.count
+            }))
+            .sort((a, b) => b.count - a.count)
+            .slice(0, 10); // Top 10
+
+        if (sorted.length === 0) {
+            const message = isFilteredByActivity
+                ? 'No co-occurring activities found'
+                : 'No activity data available';
+            this.topActivities.innerHTML = `<p class="no-data-message">${message}</p>`;
+            return;
+        }
+
+        const maxCount = sorted[0].count;
+        const selectedActivityName = isFilteredByActivity
+            ? this.tags[Number(selectedActivityId)] || 'selected activity'
+            : '';
+
+        let html = '';
+        if (isFilteredByActivity) {
+            html += `<p class="co-occurring-label">Activities that co-occur with "${this.escapeHtml(selectedActivityName)}":</p>`;
+        }
+
+        for (const activity of sorted) {
+            const barWidth = (activity.count / maxCount) * 100;
+            const moodColor = this.getMoodColorByScore(activity.avgMood);
+            html += `
+                <div class="activity-stat">
+                    <span class="activity-stat-name" title="${this.escapeHtml(activity.name)}">${this.escapeHtml(activity.name)}</span>
+                    <div class="activity-stat-bar-container">
+                        <div class="activity-stat-bar" style="width: ${barWidth}%; background: ${moodColor};"></div>
+                    </div>
+                    <span class="activity-stat-count">${activity.count}×</span>
+                    <span class="activity-stat-mood" title="Avg mood">${activity.avgMood.toFixed(1)}/5</span>
+                </div>
+            `;
+        }
+
+        this.topActivities.innerHTML = html;
+    }
+
+    private getMoodColorByScore(score: number): string {
+        // Score is 1-5 (awful to great)
+        if (score >= 4.5) return 'var(--mood-great)';
+        if (score >= 3.5) return 'var(--mood-good)';
+        if (score >= 2.5) return 'var(--mood-meh)';
+        if (score >= 1.5) return 'var(--mood-bad)';
+        return 'var(--mood-awful)';
+    }
+
+    private renderEntriesPerMonth(): void {
+        const entries = this.insightsFilteredEntries;
+
+        if (entries.length === 0) {
+            this.entriesPerMonth.innerHTML = '<p class="no-data-message">No entries to display</p>';
+            return;
+        }
+
+        // Get the date range from entries
+        const sorted = [...entries].sort((a, b) => a.datetime - b.datetime);
+        const firstDate = new Date(sorted[0].datetime);
+        const lastDate = new Date(sorted[sorted.length - 1].datetime);
+
+        // Count entries per month
+        const monthCounts: { key: string; label: string; count: number }[] = [];
+        const countMap = new Map<string, number>();
+
+        for (const entry of entries) {
+            const date = new Date(entry.datetime);
+            const key = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}`;
+            countMap.set(key, (countMap.get(key) || 0) + 1);
+        }
+
+        // Build month list from first to last
+        const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+        let current = new Date(firstDate.getFullYear(), firstDate.getMonth(), 1);
+        const end = new Date(lastDate.getFullYear(), lastDate.getMonth(), 1);
+
+        while (current <= end) {
+            const key = `${current.getFullYear()}-${String(current.getMonth() + 1).padStart(2, '0')}`;
+            const label = `${months[current.getMonth()]} ${String(current.getFullYear()).slice(2)}`;
+            monthCounts.push({
+                key,
+                label,
+                count: countMap.get(key) || 0
+            });
+            current.setMonth(current.getMonth() + 1);
+        }
+
+        // Limit to last 12 months if too many
+        const displayData = monthCounts.slice(-12);
+
+        if (displayData.length === 0) {
+            this.entriesPerMonth.innerHTML = '<p class="no-data-message">No entries to display</p>';
+            return;
+        }
+
+        const maxCount = Math.max(...displayData.map(m => m.count));
+        const maxBarHeight = 100; // pixels
+
+        let html = '';
+        for (const month of displayData) {
+            const barHeight = maxCount > 0 ? Math.round((month.count / maxCount) * maxBarHeight) : 0;
+            html += `
+                <div class="month-bar-container">
+                    <span class="month-bar-count">${month.count || ''}</span>
+                    <div class="month-bar" style="height: ${barHeight}px;" title="${month.label}: ${month.count} entries"></div>
+                    <span class="month-bar-label">${month.label}</span>
+                </div>
+            `;
+        }
+
+        this.entriesPerMonth.innerHTML = html;
     }
 
     private updateCurrentEntry(): void {

@@ -22,6 +22,10 @@ const filesToCopy = [
     {
         src: 'node_modules/quill/dist/quill.snow.css',
         dest: 'quill.snow.css'
+    },
+    {
+        src: 'node_modules/html2canvas/dist/html2canvas.min.js',
+        dest: 'html2canvas.min.js'
     }
 ];
 

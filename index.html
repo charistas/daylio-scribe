@@ -64,7 +64,15 @@
                         <input type="checkbox" id="filterNotes"> Show only entries with notes
                     </label>
                     <button id="insightsBtn" class="btn btn-secondary">📊 Insights</button>
-                    <button id="exportCsvBtn" class="btn btn-secondary">Export CSV</button>
+                    <div class="export-dropdown">
+                        <button id="exportBtn" class="btn btn-secondary" aria-haspopup="true" aria-expanded="false">Export ▼</button>
+                        <div class="export-menu" id="exportMenu" role="menu">
+                            <button class="export-option" id="exportCsvBtn" role="menuitem">CSV (Spreadsheet)</button>
+                            <button class="export-option" id="exportJsonBtn" role="menuitem">JSON (Raw Data)</button>
+                            <button class="export-option" id="exportMarkdownBtn" role="menuitem">Markdown (Text)</button>
+                            <button class="export-option" id="exportPdfBtn" role="menuitem">PDF (Document)</button>
+                        </div>
+                    </div>
                     <button id="saveBtn" class="btn btn-primary">Download Backup</button>
                 </div>
             </div>
@@ -267,6 +275,7 @@
     <script src="vendor/quill.js"></script>
     <script src="vendor/emoji-picker-element.bundle.js"></script>
     <script src="vendor/html2canvas.min.js"></script>
+    <script src="vendor/jspdf.min.js"></script>
     <script src="dist/app.js"></script>
 </body>
 </html>

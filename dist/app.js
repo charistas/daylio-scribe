@@ -109,7 +109,13 @@
       this.prevMonthBtn = document.getElementById("prevMonth");
       this.nextMonthBtn = document.getElementById("nextMonth");
       this.saveBtn = document.getElementById("saveBtn");
+      this.exportBtn = document.getElementById("exportBtn");
+      this.exportMenu = document.getElementById("exportMenu");
+      this.exportDropdown = this.exportBtn.parentElement;
       this.exportCsvBtn = document.getElementById("exportCsvBtn");
+      this.exportJsonBtn = document.getElementById("exportJsonBtn");
+      this.exportMarkdownBtn = document.getElementById("exportMarkdownBtn");
+      this.exportPdfBtn = document.getElementById("exportPdfBtn");
       this.editorPlaceholder = document.getElementById("editorPlaceholder");
       this.editor = document.getElementById("editor");
       this.editorDate = document.getElementById("editorDate");
@@ -308,7 +314,28 @@
       });
       this.searchInput.addEventListener("input", () => this.applyFilters());
       this.saveBtn.addEventListener("click", () => this.saveBackup());
-      this.exportCsvBtn.addEventListener("click", () => this.exportCsv());
+      this.exportBtn.addEventListener("click", () => this.toggleExportMenu());
+      this.exportCsvBtn.addEventListener("click", () => {
+        this.closeExportMenu();
+        this.exportCsv();
+      });
+      this.exportJsonBtn.addEventListener("click", () => {
+        this.closeExportMenu();
+        this.exportJson();
+      });
+      this.exportMarkdownBtn.addEventListener("click", () => {
+        this.closeExportMenu();
+        this.exportMarkdown();
+      });
+      this.exportPdfBtn.addEventListener("click", () => {
+        this.closeExportMenu();
+        this.exportPdf();
+      });
+      document.addEventListener("click", (e) => {
+        if (!this.exportDropdown.contains(e.target)) {
+          this.closeExportMenu();
+        }
+      });
       this.dateRangeSelect.addEventListener("change", () => {
         if (this.dateRangeSelect.value === "custom") {
           this.customDateRange.classList.remove("hidden");
@@ -1859,6 +1886,19 @@ Do you want to continue anyway?`
         this.showToast("error", "Failed to Save Backup", err.message);
       }
     }
+    toggleExportMenu() {
+      const isOpen = this.exportDropdown.classList.contains("open");
+      if (isOpen) {
+        this.closeExportMenu();
+      } else {
+        this.exportDropdown.classList.add("open");
+        this.exportBtn.setAttribute("aria-expanded", "true");
+      }
+    }
+    closeExportMenu() {
+      this.exportDropdown.classList.remove("open");
+      this.exportBtn.setAttribute("aria-expanded", "false");
+    }
     exportCsv() {
       try {
         if (!this.entries || this.entries.length === 0) {
@@ -1916,6 +1956,243 @@ Do you want to continue anyway?`
         return '"' + str.replace(/"/g, '""') + '"';
       }
       return str;
+    }
+    exportJson() {
+      try {
+        if (!this.data) {
+          this.showToast("warning", "No Data", "Load a backup file first before exporting.");
+          return;
+        }
+        const jsonString = JSON.stringify(this.data, null, 2);
+        const blob = new Blob([jsonString], { type: "application/json;charset=utf-8" });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement("a");
+        a.href = url;
+        const now = /* @__PURE__ */ new Date();
+        const dateStr = `${now.getFullYear()}_${String(now.getMonth() + 1).padStart(2, "0")}_${String(now.getDate()).padStart(2, "0")}`;
+        a.download = `daylio_export_${dateStr}.json`;
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+        URL.revokeObjectURL(url);
+        this.showToast("success", "JSON Exported", `Exported ${this.entries.length} entries to JSON.`);
+      } catch (err) {
+        this.showToast("error", "Failed to Export JSON", err.message);
+        console.error("JSON export error:", err);
+      }
+    }
+    exportMarkdown() {
+      try {
+        if (!this.entries || this.entries.length === 0) {
+          this.showToast("warning", "No Entries", "Load a backup file first before exporting.");
+          return;
+        }
+        const lines = [];
+        lines.push("# Daylio Journal Export");
+        lines.push("");
+        const sortedEntries = [...this.entries].sort((a2, b) => b.datetime - a2.datetime);
+        let currentYear = -1;
+        let currentMonth = -1;
+        const months = [
+          "January",
+          "February",
+          "March",
+          "April",
+          "May",
+          "June",
+          "July",
+          "August",
+          "September",
+          "October",
+          "November",
+          "December"
+        ];
+        for (const entry of sortedEntries) {
+          if (entry.year !== currentYear) {
+            currentYear = entry.year;
+            currentMonth = -1;
+            lines.push(`## ${currentYear}`);
+            lines.push("");
+          }
+          if (entry.month !== currentMonth) {
+            currentMonth = entry.month;
+            lines.push(`### ${months[currentMonth]}`);
+            lines.push("");
+          }
+          const weekdays = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
+          const date = new Date(entry.year, entry.month, entry.day);
+          const weekday = weekdays[date.getDay()];
+          const time = `${String(entry.hour).padStart(2, "0")}:${String(entry.minute).padStart(2, "0")}`;
+          const mood = this.getMoodLabel(entry.mood);
+          lines.push(`#### ${months[entry.month]} ${entry.day}, ${weekday} at ${time}`);
+          lines.push("");
+          lines.push(`**Mood:** ${mood}`);
+          const activities = this.getEntryTags(entry);
+          if (activities.length > 0) {
+            lines.push(`**Activities:** ${activities.join(", ")}`);
+          }
+          const photoCount = entry.assets?.length || 0;
+          if (photoCount > 0) {
+            lines.push(`**Photos:** ${photoCount}`);
+          }
+          lines.push("");
+          if (entry.note_title?.trim()) {
+            lines.push(`**${entry.note_title.trim()}**`);
+            lines.push("");
+          }
+          if (entry.note) {
+            const plainText = this.htmlToPlainText(entry.note);
+            if (plainText) {
+              lines.push(plainText);
+              lines.push("");
+            }
+          }
+          lines.push("---");
+          lines.push("");
+        }
+        const markdown = lines.join("\n");
+        const blob = new Blob([markdown], { type: "text/markdown;charset=utf-8" });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement("a");
+        a.href = url;
+        const now = /* @__PURE__ */ new Date();
+        const dateStr = `${now.getFullYear()}_${String(now.getMonth() + 1).padStart(2, "0")}_${String(now.getDate()).padStart(2, "0")}`;
+        a.download = `daylio_export_${dateStr}.md`;
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+        URL.revokeObjectURL(url);
+        this.showToast("success", "Markdown Exported", `Exported ${this.entries.length} entries to Markdown.`);
+      } catch (err) {
+        this.showToast("error", "Failed to Export Markdown", err.message);
+        console.error("Markdown export error:", err);
+      }
+    }
+    async exportPdf() {
+      try {
+        if (!this.entries || this.entries.length === 0) {
+          this.showToast("warning", "No Entries", "Load a backup file first before exporting.");
+          return;
+        }
+        const sortedEntries = [...this.entries].sort((a, b) => b.datetime - a.datetime);
+        const months = [
+          "January",
+          "February",
+          "March",
+          "April",
+          "May",
+          "June",
+          "July",
+          "August",
+          "September",
+          "October",
+          "November",
+          "December"
+        ];
+        const weekdays = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
+        const doc = new jsPDF("p", "mm", "a4");
+        const pageWidth = doc.internal.pageSize.getWidth();
+        const pageHeight = doc.internal.pageSize.getHeight();
+        const margin = 15;
+        const contentWidth = pageWidth - margin * 2;
+        let y = margin;
+        doc.setFontSize(24);
+        doc.setFont("helvetica", "bold");
+        doc.text("Daylio Journal", margin, y);
+        y += 12;
+        doc.setFontSize(10);
+        doc.setFont("helvetica", "normal");
+        doc.setTextColor(100);
+        doc.text(`Exported on ${(/* @__PURE__ */ new Date()).toLocaleDateString()}`, margin, y);
+        doc.setTextColor(0);
+        y += 10;
+        let currentYear = -1;
+        let currentMonth = -1;
+        for (const entry of sortedEntries) {
+          if (y > pageHeight - 40) {
+            doc.addPage();
+            y = margin;
+          }
+          if (entry.year !== currentYear) {
+            currentYear = entry.year;
+            currentMonth = -1;
+            y += 5;
+            doc.setFontSize(18);
+            doc.setFont("helvetica", "bold");
+            doc.text(String(currentYear), margin, y);
+            y += 8;
+          }
+          if (entry.month !== currentMonth) {
+            currentMonth = entry.month;
+            doc.setFontSize(14);
+            doc.setFont("helvetica", "bold");
+            doc.setTextColor(80);
+            doc.text(months[currentMonth], margin, y);
+            doc.setTextColor(0);
+            y += 7;
+          }
+          if (y > pageHeight - 30) {
+            doc.addPage();
+            y = margin;
+          }
+          const date = new Date(entry.year, entry.month, entry.day);
+          const weekday = weekdays[date.getDay()];
+          const time = `${String(entry.hour).padStart(2, "0")}:${String(entry.minute).padStart(2, "0")}`;
+          const mood = this.getMoodLabel(entry.mood);
+          doc.setFontSize(11);
+          doc.setFont("helvetica", "bold");
+          doc.text(`${months[entry.month]} ${entry.day}, ${weekday}`, margin, y);
+          doc.setFont("helvetica", "normal");
+          doc.setTextColor(100);
+          doc.text(`${time} \u2022 ${mood}`, margin + 50, y);
+          doc.setTextColor(0);
+          y += 5;
+          const activities = this.getEntryTags(entry);
+          if (activities.length > 0) {
+            doc.setFontSize(9);
+            doc.setTextColor(80);
+            const activityText = activities.join(", ");
+            const activityLines = doc.splitTextToSize(activityText, contentWidth);
+            doc.text(activityLines, margin, y);
+            y += activityLines.length * 4;
+            doc.setTextColor(0);
+          }
+          if (entry.note_title?.trim()) {
+            doc.setFontSize(10);
+            doc.setFont("helvetica", "bold");
+            const titleLines = doc.splitTextToSize(entry.note_title.trim(), contentWidth);
+            doc.text(titleLines, margin, y);
+            y += titleLines.length * 4 + 1;
+            doc.setFont("helvetica", "normal");
+          }
+          if (entry.note) {
+            const plainText = this.htmlToPlainText(entry.note);
+            if (plainText) {
+              doc.setFontSize(9);
+              const noteLines = doc.splitTextToSize(plainText, contentWidth);
+              for (const line of noteLines) {
+                if (y > pageHeight - 15) {
+                  doc.addPage();
+                  y = margin;
+                }
+                doc.text(line, margin, y);
+                y += 4;
+              }
+            }
+          }
+          y += 3;
+          doc.setDrawColor(200);
+          doc.line(margin, y, pageWidth - margin, y);
+          y += 5;
+        }
+        const now = /* @__PURE__ */ new Date();
+        const dateStr = `${now.getFullYear()}_${String(now.getMonth() + 1).padStart(2, "0")}_${String(now.getDate()).padStart(2, "0")}`;
+        doc.save(`daylio_export_${dateStr}.pdf`);
+        this.showToast("success", "PDF Exported", `Exported ${this.entries.length} entries to PDF.`);
+      } catch (err) {
+        this.showToast("error", "Failed to Export PDF", err.message);
+        console.error("PDF export error:", err);
+      }
     }
   };
   document.addEventListener("DOMContentLoaded", () => {

@@ -18,7 +18,7 @@ A local web app for editing Daylio journal notes with a human-friendly interface
 - Mini calendar for quick date navigation
 - Date range filter (presets + custom range)
 - Download ready-to-import `.daylio` backup with one click
-- Export to CSV for spreadsheet analysis
+- Export to CSV, JSON, Markdown, or PDF
 - Full UTF-8 support (Greek, emoji, etc.)
 - Works offline (all dependencies bundled locally)
 - View photo attachments with thumbnail gallery and fullscreen lightbox

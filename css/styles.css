@@ -326,6 +326,53 @@ header h1 {
     background: var(--border);
 }
 
+/* Export Dropdown */
+.export-dropdown {
+    position: relative;
+    display: inline-block;
+}
+
+.export-menu {
+    display: none;
+    position: absolute;
+    top: 100%;
+    left: 0;
+    z-index: 100;
+    min-width: 160px;
+    background: var(--bg-secondary);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
+    padding: 4px 0;
+    margin-top: 4px;
+}
+
+.export-dropdown.open .export-menu {
+    display: block;
+}
+
+.export-option {
+    display: block;
+    width: 100%;
+    padding: 8px 12px;
+    text-align: left;
+    background: none;
+    border: none;
+    color: var(--text-primary);
+    font-size: 13px;
+    cursor: pointer;
+    transition: background 0.15s;
+}
+
+.export-option:hover {
+    background: var(--bg-tertiary);
+}
+
+.export-option:focus {
+    outline: none;
+    background: var(--bg-tertiary);
+}
+
 /* Main Content */
 .main-content {
     display: grid;

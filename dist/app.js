@@ -2082,7 +2082,6 @@ Do you want to continue anyway?`
           this.showToast("warning", "No Entries", "Load a backup file first before exporting.");
           return;
         }
-        this.showToast("info", "Generating PDF", "Loading fonts...");
         const sortedEntries = [...this.entries].sort((a, b) => b.datetime - a.datetime);
         const months = [
           "January",
@@ -2101,12 +2100,8 @@ Do you want to continue anyway?`
         const weekdays = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
         const { jsPDF } = jspdf;
         const doc = new jsPDF("p", "mm", "a4");
-        const [robotoRegular, robotoBold] = await Promise.all([
-          fetch("vendor/Roboto-Regular.ttf").then((r) => r.arrayBuffer()),
-          fetch("vendor/Roboto-Bold.ttf").then((r) => r.arrayBuffer())
-        ]);
-        doc.addFileToVFS("Roboto-Regular.ttf", this.arrayBufferToBase64(robotoRegular));
-        doc.addFileToVFS("Roboto-Bold.ttf", this.arrayBufferToBase64(robotoBold));
+        doc.addFileToVFS("Roboto-Regular.ttf", ROBOTO_FONTS.regular);
+        doc.addFileToVFS("Roboto-Bold.ttf", ROBOTO_FONTS.bold);
         doc.addFont("Roboto-Regular.ttf", "Roboto", "normal");
         doc.addFont("Roboto-Bold.ttf", "Roboto", "bold");
         const pageWidth = doc.internal.pageSize.getWidth();

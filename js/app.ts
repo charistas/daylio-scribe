@@ -9,6 +9,7 @@ declare const Quill: any;
 declare const JSZip: any;
 declare const html2canvas: (element: HTMLElement, options?: any) => Promise<HTMLCanvasElement>;
 declare const jspdf: { jsPDF: any };
+declare const ROBOTO_FONTS: { regular: string; bold: string };
 
 // Highest Daylio backup version tested with this app
 const SUPPORTED_VERSION = 19;
@@ -2667,9 +2668,6 @@ class DaylioScribe {
                 return;
             }
 
-            // Show loading state
-            this.showToast('info', 'Generating PDF', 'Loading fonts...');
-
             const sortedEntries = [...this.entries].sort((a, b) => b.datetime - a.datetime);
             const months = ['January', 'February', 'March', 'April', 'May', 'June',
                            'July', 'August', 'September', 'October', 'November', 'December'];
@@ -2679,15 +2677,9 @@ class DaylioScribe {
             const { jsPDF } = jspdf;
             const doc = new jsPDF('p', 'mm', 'a4');
 
-            // Load Roboto fonts for Unicode support (Greek, etc.)
-            const [robotoRegular, robotoBold] = await Promise.all([
-                fetch('vendor/Roboto-Regular.ttf').then(r => r.arrayBuffer()),
-                fetch('vendor/Roboto-Bold.ttf').then(r => r.arrayBuffer())
-            ]);
-
-            // Add fonts to jsPDF
-            doc.addFileToVFS('Roboto-Regular.ttf', this.arrayBufferToBase64(robotoRegular));
-            doc.addFileToVFS('Roboto-Bold.ttf', this.arrayBufferToBase64(robotoBold));
+            // Add Roboto fonts for Unicode support (Greek, etc.)
+            doc.addFileToVFS('Roboto-Regular.ttf', ROBOTO_FONTS.regular);
+            doc.addFileToVFS('Roboto-Bold.ttf', ROBOTO_FONTS.bold);
             doc.addFont('Roboto-Regular.ttf', 'Roboto', 'normal');
             doc.addFont('Roboto-Bold.ttf', 'Roboto', 'bold');
 

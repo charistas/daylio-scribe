@@ -22,6 +22,10 @@ A local web app for editing Daylio journal notes with a human-friendly interface
 - Full UTF-8 support (Greek, emoji, etc.)
 - Works offline (all dependencies bundled locally)
 - View photo attachments with thumbnail gallery and fullscreen lightbox
+- Dark/light theme toggle (respects system preference)
+- Activities display for each entry
+- Insights dashboard with mood trends, streaks, year-in-pixels, and export to PNG
+- Full keyboard navigation and screen reader support
 
 ## How to Use
 

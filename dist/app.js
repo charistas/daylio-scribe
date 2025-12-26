@@ -43,6 +43,8 @@
       // ZIP storage
       this.originalZip = null;
       this.assets = {};
+      this.insightsYear = (/* @__PURE__ */ new Date()).getFullYear();
+      this.insightsFilteredEntries = [];
       this.handleLightboxKeydown = (e) => {
         if (e.key === "Tab") {
           const focusableEls = this.photoLightbox.querySelectorAll(
@@ -126,6 +128,27 @@
       this.lightboxPrev = document.getElementById("lightboxPrev");
       this.lightboxNext = document.getElementById("lightboxNext");
       this.themeToggle = document.getElementById("themeToggle");
+      this.insightsBtn = document.getElementById("insightsBtn");
+      this.insightsModal = document.getElementById("insightsModal");
+      this.insightsClose = document.getElementById("insightsClose");
+      this.insightsOverlay = this.insightsModal.querySelector(".insights-overlay");
+      this.statTotalEntries = document.getElementById("statTotalEntries");
+      this.statCurrentStreak = document.getElementById("statCurrentStreak");
+      this.statLongestStreak = document.getElementById("statLongestStreak");
+      this.statAvgMood = document.getElementById("statAvgMood");
+      this.yearLabel = document.getElementById("yearLabel");
+      this.prevYearBtn = document.getElementById("prevYear");
+      this.nextYearBtn = document.getElementById("nextYear");
+      this.yearPixelsGrid = document.getElementById("yearPixelsGrid");
+      this.monthLabels = document.getElementById("monthLabels");
+      this.moodBreakdown = document.getElementById("moodBreakdown");
+      this.insightsDateRange = document.getElementById("insightsDateRange");
+      this.insightsActivity = document.getElementById("insightsActivity");
+      this.filterSummary = document.getElementById("filterSummary");
+      this.moodTrendsChart = document.getElementById("moodTrendsChart");
+      this.topActivities = document.getElementById("topActivities");
+      this.entriesPerMonth = document.getElementById("entriesPerMonth");
+      this.exportInsightsBtn = document.getElementById("exportInsightsBtn");
     }
     initQuill() {
       this.quill = new Quill("#noteEditor", {
@@ -250,6 +273,17 @@
     }
     bindEvents() {
       this.themeToggle.addEventListener("click", () => this.toggleTheme());
+      this.insightsBtn.addEventListener("click", () => this.openInsights());
+      this.insightsClose.addEventListener("click", () => this.closeInsights());
+      this.insightsOverlay.addEventListener("click", () => this.closeInsights());
+      this.prevYearBtn.addEventListener("click", () => this.changeInsightsYear(-1));
+      this.nextYearBtn.addEventListener("click", () => this.changeInsightsYear(1));
+      this.insightsModal.addEventListener("keydown", (e) => {
+        if (e.key === "Escape") this.closeInsights();
+      });
+      this.insightsDateRange.addEventListener("change", () => this.applyInsightsFilters());
+      this.insightsActivity.addEventListener("change", () => this.applyInsightsFilters());
+      this.exportInsightsBtn.addEventListener("click", () => this.exportInsights());
       this.dropzone.addEventListener("click", () => this.fileInput.click());
       this.fileInput.addEventListener("change", (e) => {
         const target = e.target;
@@ -1033,6 +1067,499 @@ Do you want to continue anyway?`
       const hasMultiple = this.currentEntryPhotos.length > 1;
       this.lightboxPrev.style.display = hasMultiple ? "" : "none";
       this.lightboxNext.style.display = hasMultiple ? "" : "none";
+    }
+    // ==================== Insights Dashboard ====================
+    openInsights() {
+      this.insightsModal.classList.remove("hidden");
+      document.body.style.overflow = "hidden";
+      this.insightsClose.focus();
+      if (this.entries.length > 0) {
+        this.insightsYear = new Date(this.entries[0].datetime).getFullYear();
+      } else {
+        this.insightsYear = (/* @__PURE__ */ new Date()).getFullYear();
+      }
+      this.populateActivityDropdown();
+      this.insightsDateRange.value = "all";
+      this.insightsActivity.value = "all";
+      this.applyInsightsFilters();
+    }
+    populateActivityDropdown() {
+      const activityCounts = {};
+      for (const entry of this.entries) {
+        for (const tagId of entry.tags || []) {
+          activityCounts[tagId] = (activityCounts[tagId] || 0) + 1;
+        }
+      }
+      const sortedActivities = Object.entries(activityCounts).map(([id, count]) => ({ id: Number(id), count })).sort((a, b) => b.count - a.count);
+      let html = '<option value="all">All Activities</option>';
+      for (const { id } of sortedActivities) {
+        const name = this.tags[id] || `Activity ${id}`;
+        html += `<option value="${id}">${this.escapeHtml(name)}</option>`;
+      }
+      this.insightsActivity.innerHTML = html;
+    }
+    applyInsightsFilters() {
+      const dateRange = this.insightsDateRange.value;
+      const activityId = this.insightsActivity.value;
+      let filtered = [...this.entries];
+      if (dateRange !== "all") {
+        const now = /* @__PURE__ */ new Date();
+        let startDate;
+        let endDate = now;
+        switch (dateRange) {
+          case "thisMonth":
+            startDate = new Date(now.getFullYear(), now.getMonth(), 1);
+            break;
+          case "last30":
+            startDate = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1e3);
+            break;
+          case "last3Months":
+            startDate = new Date(now.getFullYear(), now.getMonth() - 3, now.getDate());
+            break;
+          case "thisYear":
+            startDate = new Date(now.getFullYear(), 0, 1);
+            break;
+          case "lastYear":
+            startDate = new Date(now.getFullYear() - 1, 0, 1);
+            endDate = new Date(now.getFullYear() - 1, 11, 31, 23, 59, 59);
+            break;
+          default:
+            startDate = /* @__PURE__ */ new Date(0);
+        }
+        filtered = filtered.filter((entry) => {
+          const entryDate = new Date(entry.datetime);
+          return entryDate >= startDate && entryDate <= endDate;
+        });
+      }
+      if (activityId !== "all") {
+        const tagId = Number(activityId);
+        filtered = filtered.filter(
+          (entry) => (entry.tags || []).includes(tagId)
+        );
+      }
+      this.insightsFilteredEntries = filtered;
+      const total = this.entries.length;
+      const showing = filtered.length;
+      if (showing === total) {
+        this.filterSummary.textContent = `Showing all ${total} entries`;
+      } else {
+        this.filterSummary.textContent = `Showing ${showing} of ${total} entries`;
+      }
+      this.renderInsights();
+    }
+    closeInsights() {
+      this.insightsModal.classList.add("hidden");
+      document.body.style.overflow = "";
+      this.insightsBtn.focus();
+    }
+    async exportInsights() {
+      const insightsBody = this.insightsModal.querySelector(".insights-body");
+      if (!insightsBody) return;
+      const originalText = this.exportInsightsBtn.textContent;
+      this.exportInsightsBtn.textContent = "Exporting...";
+      this.exportInsightsBtn.disabled = true;
+      try {
+        const canvas = await html2canvas(insightsBody, {
+          backgroundColor: getComputedStyle(document.documentElement).getPropertyValue("--bg-primary").trim() || "#1a1a2e",
+          scale: 2,
+          // Higher resolution
+          logging: false,
+          useCORS: true,
+          allowTaint: true
+        });
+        canvas.toBlob((blob) => {
+          if (!blob) {
+            this.showToast("Failed to generate image", "error");
+            return;
+          }
+          const url = URL.createObjectURL(blob);
+          const link = document.createElement("a");
+          link.href = url;
+          const dateRange = this.insightsDateRange.value;
+          const activity = this.insightsActivity.value !== "all" ? `_${this.tags[Number(this.insightsActivity.value)] || "activity"}` : "";
+          const timestamp = (/* @__PURE__ */ new Date()).toISOString().slice(0, 10);
+          link.download = `daylio-insights_${dateRange}${activity}_${timestamp}.png`;
+          document.body.appendChild(link);
+          link.click();
+          document.body.removeChild(link);
+          URL.revokeObjectURL(url);
+          this.showToast("Insights exported successfully", "success");
+        }, "image/png");
+      } catch (error) {
+        console.error("Export failed:", error);
+        this.showToast("Failed to export insights", "error");
+      } finally {
+        this.exportInsightsBtn.textContent = originalText;
+        this.exportInsightsBtn.disabled = false;
+      }
+    }
+    changeInsightsYear(delta) {
+      this.insightsYear += delta;
+      this.yearLabel.textContent = String(this.insightsYear);
+      this.renderYearPixels();
+    }
+    renderInsights() {
+      this.renderQuickStats();
+      this.renderYearPixels();
+      this.renderMoodBreakdown();
+      this.renderMoodTrends();
+      this.renderTopActivities();
+      this.renderEntriesPerMonth();
+    }
+    renderQuickStats() {
+      const entries = this.insightsFilteredEntries;
+      this.statTotalEntries.textContent = String(entries.length);
+      const { currentStreak, longestStreak } = this.calculateStreaks(entries);
+      this.statCurrentStreak.textContent = `${currentStreak} days`;
+      this.statLongestStreak.textContent = `${longestStreak} days`;
+      if (entries.length > 0) {
+        let totalMoodGroup = 0;
+        let count = 0;
+        for (const entry of entries) {
+          const moodGroup = this.getMoodGroupId(entry.mood);
+          if (moodGroup >= 1 && moodGroup <= 5) {
+            totalMoodGroup += moodGroup;
+            count++;
+          }
+        }
+        if (count > 0) {
+          const avg = totalMoodGroup / count;
+          const starRating = (6 - avg).toFixed(1);
+          this.statAvgMood.textContent = `${starRating}/5`;
+        } else {
+          this.statAvgMood.textContent = "-";
+        }
+      } else {
+        this.statAvgMood.textContent = "-";
+      }
+    }
+    calculateStreaks(entries) {
+      if (entries.length === 0) {
+        return { currentStreak: 0, longestStreak: 0 };
+      }
+      const entryDates = /* @__PURE__ */ new Set();
+      for (const entry of entries) {
+        const date = new Date(entry.datetime);
+        const dateStr = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}-${String(date.getDate()).padStart(2, "0")}`;
+        entryDates.add(dateStr);
+      }
+      const sortedDates = Array.from(entryDates).sort().reverse();
+      const today = /* @__PURE__ */ new Date();
+      let currentStreak = 0;
+      let checkDate = new Date(today);
+      while (true) {
+        const dateStr = `${checkDate.getFullYear()}-${String(checkDate.getMonth() + 1).padStart(2, "0")}-${String(checkDate.getDate()).padStart(2, "0")}`;
+        if (entryDates.has(dateStr)) {
+          currentStreak++;
+          checkDate.setDate(checkDate.getDate() - 1);
+        } else if (currentStreak === 0) {
+          checkDate.setDate(checkDate.getDate() - 1);
+          const yesterdayStr = `${checkDate.getFullYear()}-${String(checkDate.getMonth() + 1).padStart(2, "0")}-${String(checkDate.getDate()).padStart(2, "0")}`;
+          if (!entryDates.has(yesterdayStr)) {
+            break;
+          }
+        } else {
+          break;
+        }
+      }
+      let longestStreak = 0;
+      let streak = 0;
+      let prevDate = null;
+      for (const dateStr of sortedDates) {
+        const [year, month, day] = dateStr.split("-").map(Number);
+        const currentDate = new Date(year, month - 1, day);
+        if (prevDate === null) {
+          streak = 1;
+        } else {
+          const diffDays = Math.round((prevDate.getTime() - currentDate.getTime()) / (1e3 * 60 * 60 * 24));
+          if (diffDays === 1) {
+            streak++;
+          } else {
+            longestStreak = Math.max(longestStreak, streak);
+            streak = 1;
+          }
+        }
+        prevDate = currentDate;
+      }
+      longestStreak = Math.max(longestStreak, streak);
+      return { currentStreak, longestStreak };
+    }
+    renderYearPixels() {
+      this.yearLabel.textContent = String(this.insightsYear);
+      const moodMap = /* @__PURE__ */ new Map();
+      for (const entry of this.insightsFilteredEntries) {
+        const date = new Date(entry.datetime);
+        if (date.getFullYear() === this.insightsYear) {
+          const key = `${date.getMonth()}-${date.getDate()}`;
+          if (!moodMap.has(key)) {
+            moodMap.set(key, this.getMoodGroupId(entry.mood));
+          }
+        }
+      }
+      const months = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+      this.monthLabels.innerHTML = months.map((m) => `<div class="month-label">${m}</div>`).join("");
+      const daysInMonth = [31, 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31];
+      if (this.insightsYear % 4 === 0 && this.insightsYear % 100 !== 0 || this.insightsYear % 400 === 0) {
+        daysInMonth[1] = 29;
+      }
+      let html = "";
+      for (let month = 0; month < 12; month++) {
+        for (let day = 1; day <= 31; day++) {
+          const key = `${month}-${day}`;
+          const moodGroup = moodMap.get(key);
+          if (day <= daysInMonth[month]) {
+            const moodClass = moodGroup ? `mood-${moodGroup}` : "empty";
+            const dateStr = `${months[month]} ${day}, ${this.insightsYear}`;
+            const moodLabel = moodGroup ? this.getMoodLabelByGroup(moodGroup) : "No entry";
+            html += `<div class="pixel ${moodClass}" title="${dateStr}: ${moodLabel}" data-month="${month}" data-day="${day}"></div>`;
+          } else {
+            html += `<div class="pixel" style="visibility: hidden;"></div>`;
+          }
+        }
+      }
+      this.yearPixelsGrid.innerHTML = html;
+      this.yearPixelsGrid.querySelectorAll(".pixel:not(.empty)").forEach((pixel) => {
+        pixel.addEventListener("click", (e) => {
+          const target = e.target;
+          const month = parseInt(target.dataset.month || "0");
+          const day = parseInt(target.dataset.day || "1");
+          this.jumpToDate(this.insightsYear, month, day);
+        });
+      });
+    }
+    getMoodLabelByGroup(groupId) {
+      const labels = ["", "Great", "Good", "Meh", "Bad", "Awful"];
+      return labels[groupId] || "";
+    }
+    jumpToDate(year, month, day) {
+      const entry = this.entries.find((e) => {
+        const d = new Date(e.datetime);
+        return d.getFullYear() === year && d.getMonth() === month && d.getDate() === day;
+      });
+      if (entry) {
+        const index = this.entries.indexOf(entry);
+        this.closeInsights();
+        this.selectEntry(index);
+        this.scrollToEntry(this.filteredEntries.indexOf(entry));
+      }
+    }
+    renderMoodBreakdown() {
+      const moodCounts = { 1: 0, 2: 0, 3: 0, 4: 0, 5: 0 };
+      let total = 0;
+      for (const entry of this.insightsFilteredEntries) {
+        const groupId = this.getMoodGroupId(entry.mood);
+        if (groupId >= 1 && groupId <= 5) {
+          moodCounts[groupId]++;
+          total++;
+        }
+      }
+      if (total === 0) {
+        this.moodBreakdown.innerHTML = '<p style="color: var(--text-secondary);">No mood data available</p>';
+        return;
+      }
+      const labels = ["", "Great", "Good", "Meh", "Bad", "Awful"];
+      let html = "";
+      for (let i = 1; i <= 5; i++) {
+        const count = moodCounts[i];
+        const percent = (count / total * 100).toFixed(1);
+        html += `
+                <div class="mood-bar-row">
+                    <span class="mood-bar-label">${labels[i]}</span>
+                    <div class="mood-bar-container">
+                        <div class="mood-bar mood-${i}" style="width: ${percent}%"></div>
+                    </div>
+                    <span class="mood-bar-percent">${percent}%</span>
+                </div>
+            `;
+      }
+      this.moodBreakdown.innerHTML = html;
+    }
+    renderMoodTrends() {
+      const entries = this.insightsFilteredEntries;
+      if (entries.length < 2) {
+        this.moodTrendsChart.innerHTML = '<text x="300" y="100" text-anchor="middle" class="axis-label">Not enough data for trends</text>';
+        return;
+      }
+      const weeklyMoods = [];
+      const weekMap = /* @__PURE__ */ new Map();
+      const sorted = [...entries].sort((a, b) => a.datetime - b.datetime);
+      for (const entry of sorted) {
+        const date = new Date(entry.datetime);
+        const day = date.getDay();
+        const diff = date.getDate() - day + (day === 0 ? -6 : 1);
+        const weekStart = new Date(date.setDate(diff));
+        const weekKey = `${weekStart.getFullYear()}-${String(weekStart.getMonth() + 1).padStart(2, "0")}-${String(weekStart.getDate()).padStart(2, "0")}`;
+        const moodGroup = this.getMoodGroupId(entry.mood);
+        if (moodGroup >= 1 && moodGroup <= 5) {
+          const existing = weekMap.get(weekKey) || { total: 0, count: 0 };
+          existing.total += 6 - moodGroup;
+          existing.count++;
+          weekMap.set(weekKey, existing);
+        }
+      }
+      for (const [week, data] of weekMap) {
+        weeklyMoods.push({
+          week,
+          avg: data.total / data.count,
+          count: data.count
+        });
+      }
+      weeklyMoods.sort((a, b) => a.week.localeCompare(b.week));
+      const displayData = weeklyMoods.slice(-52);
+      if (displayData.length < 2) {
+        this.moodTrendsChart.innerHTML = '<text x="300" y="100" text-anchor="middle" class="axis-label">Not enough data for trends</text>';
+        return;
+      }
+      const width = 600;
+      const height = 200;
+      const padding = { top: 20, right: 20, bottom: 30, left: 40 };
+      const chartWidth = width - padding.left - padding.right;
+      const chartHeight = height - padding.top - padding.bottom;
+      const xScale = (i) => padding.left + i / (displayData.length - 1) * chartWidth;
+      const yScale = (v) => padding.top + chartHeight - (v - 1) / 4 * chartHeight;
+      let svg = "";
+      for (let i = 1; i <= 5; i++) {
+        const y = yScale(i);
+        svg += `<line x1="${padding.left}" y1="${y}" x2="${width - padding.right}" y2="${y}" class="grid-line"/>`;
+        svg += `<text x="${padding.left - 5}" y="${y + 3}" text-anchor="end" class="mood-label">${i}</text>`;
+      }
+      svg += `<text x="${padding.left - 25}" y="${height / 2}" text-anchor="middle" transform="rotate(-90, ${padding.left - 25}, ${height / 2})" class="axis-label">Mood</text>`;
+      let pathD = "";
+      let areaD = "";
+      const points = [];
+      for (let i = 0; i < displayData.length; i++) {
+        const x = xScale(i);
+        const y = yScale(displayData[i].avg);
+        if (i === 0) {
+          pathD = `M ${x} ${y}`;
+          areaD = `M ${x} ${padding.top + chartHeight} L ${x} ${y}`;
+        } else {
+          pathD += ` L ${x} ${y}`;
+          areaD += ` L ${x} ${y}`;
+        }
+        points.push(`<circle cx="${x}" cy="${y}" r="4" class="data-point" title="${displayData[i].week}: ${displayData[i].avg.toFixed(1)}/5"/>`);
+      }
+      areaD += ` L ${xScale(displayData.length - 1)} ${padding.top + chartHeight} Z`;
+      svg += `<path d="${areaD}" class="trend-area"/>`;
+      svg += `<path d="${pathD}" class="trend-line"/>`;
+      svg += points.join("");
+      const labelIndices = [0, Math.floor(displayData.length / 2), displayData.length - 1];
+      for (const i of labelIndices) {
+        const x = xScale(i);
+        const label = displayData[i].week.slice(5);
+        svg += `<text x="${x}" y="${height - 5}" text-anchor="middle" class="axis-label">${label}</text>`;
+      }
+      this.moodTrendsChart.innerHTML = svg;
+    }
+    renderTopActivities() {
+      const entries = this.insightsFilteredEntries;
+      const selectedActivityId = this.insightsActivity.value;
+      const isFilteredByActivity = selectedActivityId !== "all";
+      const activityStats = {};
+      for (const entry of entries) {
+        const moodGroup = this.getMoodGroupId(entry.mood);
+        const moodScore = moodGroup >= 1 && moodGroup <= 5 ? 6 - moodGroup : 0;
+        for (const tagId of entry.tags || []) {
+          if (isFilteredByActivity && tagId === Number(selectedActivityId)) {
+            continue;
+          }
+          if (!activityStats[tagId]) {
+            activityStats[tagId] = { count: 0, moodTotal: 0 };
+          }
+          activityStats[tagId].count++;
+          if (moodScore > 0) {
+            activityStats[tagId].moodTotal += moodScore;
+          }
+        }
+      }
+      const sorted = Object.entries(activityStats).map(([id, stats]) => ({
+        id: Number(id),
+        name: this.tags[Number(id)] || `Activity ${id}`,
+        count: stats.count,
+        avgMood: stats.moodTotal / stats.count
+      })).sort((a, b) => b.count - a.count).slice(0, 10);
+      if (sorted.length === 0) {
+        const message = isFilteredByActivity ? "No co-occurring activities found" : "No activity data available";
+        this.topActivities.innerHTML = `<p class="no-data-message">${message}</p>`;
+        return;
+      }
+      const maxCount = sorted[0].count;
+      const selectedActivityName = isFilteredByActivity ? this.tags[Number(selectedActivityId)] || "selected activity" : "";
+      let html = "";
+      if (isFilteredByActivity) {
+        html += `<p class="co-occurring-label">Activities that co-occur with "${this.escapeHtml(selectedActivityName)}":</p>`;
+      }
+      for (const activity of sorted) {
+        const barWidth = activity.count / maxCount * 100;
+        const moodColor = this.getMoodColorByScore(activity.avgMood);
+        html += `
+                <div class="activity-stat">
+                    <span class="activity-stat-name" title="${this.escapeHtml(activity.name)}">${this.escapeHtml(activity.name)}</span>
+                    <div class="activity-stat-bar-container">
+                        <div class="activity-stat-bar" style="width: ${barWidth}%; background: ${moodColor};"></div>
+                    </div>
+                    <span class="activity-stat-count">${activity.count}\xD7</span>
+                    <span class="activity-stat-mood" title="Avg mood">${activity.avgMood.toFixed(1)}/5</span>
+                </div>
+            `;
+      }
+      this.topActivities.innerHTML = html;
+    }
+    getMoodColorByScore(score) {
+      if (score >= 4.5) return "var(--mood-great)";
+      if (score >= 3.5) return "var(--mood-good)";
+      if (score >= 2.5) return "var(--mood-meh)";
+      if (score >= 1.5) return "var(--mood-bad)";
+      return "var(--mood-awful)";
+    }
+    renderEntriesPerMonth() {
+      const entries = this.insightsFilteredEntries;
+      if (entries.length === 0) {
+        this.entriesPerMonth.innerHTML = '<p class="no-data-message">No entries to display</p>';
+        return;
+      }
+      const sorted = [...entries].sort((a, b) => a.datetime - b.datetime);
+      const firstDate = new Date(sorted[0].datetime);
+      const lastDate = new Date(sorted[sorted.length - 1].datetime);
+      const monthCounts = [];
+      const countMap = /* @__PURE__ */ new Map();
+      for (const entry of entries) {
+        const date = new Date(entry.datetime);
+        const key = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}`;
+        countMap.set(key, (countMap.get(key) || 0) + 1);
+      }
+      const months = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+      let current = new Date(firstDate.getFullYear(), firstDate.getMonth(), 1);
+      const end = new Date(lastDate.getFullYear(), lastDate.getMonth(), 1);
+      while (current <= end) {
+        const key = `${current.getFullYear()}-${String(current.getMonth() + 1).padStart(2, "0")}`;
+        const label = `${months[current.getMonth()]} ${String(current.getFullYear()).slice(2)}`;
+        monthCounts.push({
+          key,
+          label,
+          count: countMap.get(key) || 0
+        });
+        current.setMonth(current.getMonth() + 1);
+      }
+      const displayData = monthCounts.slice(-12);
+      if (displayData.length === 0) {
+        this.entriesPerMonth.innerHTML = '<p class="no-data-message">No entries to display</p>';
+        return;
+      }
+      const maxCount = Math.max(...displayData.map((m) => m.count));
+      const maxBarHeight = 100;
+      let html = "";
+      for (const month of displayData) {
+        const barHeight = maxCount > 0 ? Math.round(month.count / maxCount * maxBarHeight) : 0;
+        html += `
+                <div class="month-bar-container">
+                    <span class="month-bar-count">${month.count || ""}</span>
+                    <div class="month-bar" style="height: ${barHeight}px;" title="${month.label}: ${month.count} entries"></div>
+                    <span class="month-bar-label">${month.label}</span>
+                </div>
+            `;
+      }
+      this.entriesPerMonth.innerHTML = html;
     }
     updateCurrentEntry() {
       if (this.currentEntryIndex === null) return;

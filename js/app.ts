@@ -2412,7 +2412,7 @@ class DaylioScribe {
                 return;
             }
 
-            const headers = ['Date', 'Weekday', 'Time', 'Mood', 'Title', 'Note'];
+            const headers = ['Date', 'Weekday', 'Time', 'Mood', 'Mood Score', 'Activities', 'Activity Count', 'Photos', 'Title', 'Note'];
             const rows: string[][] = [headers];
 
             const weekdays = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
@@ -2428,10 +2428,16 @@ class DaylioScribe {
                 const weekday = weekdays[new Date(entry.year, entry.month, entry.day).getDay()];
                 const time = `${String(entry.hour).padStart(2, '0')}:${String(entry.minute).padStart(2, '0')}`;
                 const mood = this.getMoodLabel(entry.mood);
+                const moodGroupId = this.getMoodGroupId(entry.mood);
+                const moodScore = String(6 - moodGroupId); // Convert to 1-5 scale where 5=great, 1=awful
+                const activityNames = this.getEntryTags(entry);
+                const activities = activityNames.join(' | ');
+                const activityCount = String(activityNames.length);
+                const photoCount = String(entry.assets?.length || 0);
                 const title = entry.note_title || '';
                 const note = this.htmlToPlainText(entry.note || '');
 
-                rows.push([date, weekday, time, mood, title, note]);
+                rows.push([date, weekday, time, mood, moodScore, activities, activityCount, photoCount, title, note]);
             }
 
             const csv = rows.map(row =>

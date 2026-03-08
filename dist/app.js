@@ -3739,21 +3739,17 @@ Do you want to continue anyway?`
     }
     /** Convert emojis to text representation for PDF export (fonts don't support emojis) */
     emojisToText(text) {
-      const emojiRegex = /[\u{1F300}-\u{1F9FF}]|[\u{2600}-\u{26FF}]|[\u{2700}-\u{27BF}]|[\u{1F600}-\u{1F64F}]|[\u{1F680}-\u{1F6FF}]|[\u{1F1E0}-\u{1F1FF}]|[\u{2300}-\u{23FF}]|[\u{2B50}]|[\u{200D}]|[\u{FE0F}]|[\u{1FA00}-\u{1FAFF}]|[\u{E0000}-\u{E007F}]/gu;
-      return text.replace(emojiRegex, (match) => {
-        if (match === "\uFE0F" || match === "\u200D" || match.charCodeAt(0) >= 917504 && match.charCodeAt(0) <= 917631) {
-          return "";
+      const segmenter = new Intl.Segmenter("en", { granularity: "grapheme" });
+      let result = "";
+      for (const { segment } of segmenter.segment(text)) {
+        const name = EMOJI_MAP[segment] || EMOJI_MAP[segment.replace(/\uFE0F/g, "")];
+        if (name) {
+          result += name;
+        } else {
+          result += segment;
         }
-        let textName = EMOJI_MAP[match];
-        if (textName) {
-          return textName;
-        }
-        textName = EMOJI_MAP[match + "\uFE0F"];
-        if (textName) {
-          return textName;
-        }
-        return "[emoji]";
-      });
+      }
+      return result;
     }
     async saveBackup() {
       if (!this.data) return;

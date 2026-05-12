@@ -342,4 +342,28 @@ describe('round-trip conversion', () => {
         const backToDaylio = quillToDaylioHtml(toQuill);
         expect(backToDaylio).toContain('<i>italic text</i>');
     });
+
+    it('preserves Greek text, emoji, and mixed rich text through round-trip', () => {
+        const original = '<div>Καλημέρα <b>κόσμε</b> 😊</div><div><i>πλάγια</i> <u>υπογράμμιση</u> <strike>διαγραφή</strike></div>';
+        const toQuill = daylioToQuillHtml(original);
+        const backToDaylio = quillToDaylioHtml(toQuill);
+
+        expect(backToDaylio).toContain('Καλημέρα');
+        expect(backToDaylio).toContain('😊');
+        expect(backToDaylio).toContain('<b>κόσμε</b>');
+        expect(backToDaylio).toContain('<i>πλάγια</i>');
+        expect(backToDaylio).toContain('<u>υπογράμμιση</u>');
+        expect(backToDaylio).toContain('<s>διαγραφή</s>');
+    });
+
+    it('preserves bullet and ordered list semantics through round-trip', () => {
+        const original = '<ul><li>πρώτο 🚀</li><li>δεύτερο</li></ul><ol><li>one</li><li>two</li></ol>';
+        const toQuill = daylioToQuillHtml(original);
+        const backToDaylio = quillToDaylioHtml(toQuill);
+
+        expect(backToDaylio).toContain('<ul>');
+        expect(backToDaylio).toContain('<li>πρώτο 🚀</li>');
+        expect(backToDaylio).toContain('<ol>');
+        expect(backToDaylio).toContain('<li data-list="ordered">one</li>');
+    });
 });

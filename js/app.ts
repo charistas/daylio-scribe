@@ -2,17 +2,41 @@
  * Daylio Scribe - A human-friendly editor for Daylio backup notes
  */
 
-import type { DaylioBackup, DayEntry, CustomMood, Asset, MoodInfo, DateRange, VisibleRange, ToastType } from './types.js';
-import { EMOJI_MAP } from './emojiMap.js';
+import type { DaylioBackup, DayEntry, Asset, MoodInfo, DateRange, VisibleRange, ToastType } from './types.js';
+import {
+    daylioToQuillHtml as convertDaylioToQuillHtml,
+    quillToDaylioHtml as convertQuillToDaylioHtml,
+    htmlToPlainText as convertHtmlToPlainText,
+    escapeHtml as escapeHtmlText,
+    highlightText as highlightPlainText
+} from './conversions.js';
+import {
+    createDaylioArchive,
+    readDaylioArchive
+} from './daylioArchive.js';
+import {
+    SUPPORTED_VERSION,
+    buildMoodLabels as createMoodLabels,
+    buildTagLabels as createTagLabels,
+    entryHasNote,
+    filterEntries,
+    getDateRange as resolveDateRange,
+    getEntryTags as resolveEntryTags,
+    getMoodGroupId as resolveMoodGroupId,
+    getMoodLabel as resolveMoodLabel
+} from './daylioData.js';
+import {
+    buildCsvExport,
+    buildJsonExport,
+    buildMarkdownExport,
+    buildPdfDocDefinition
+} from './exporters.js';
 
 // Declare external globals (loaded via script tags)
 declare const Quill: any;
 declare const JSZip: any;
 declare const html2canvas: (element: HTMLElement, options?: any) => Promise<HTMLCanvasElement>;
 declare const pdfMake: any;
-
-// Highest Daylio backup version tested with this app
-const SUPPORTED_VERSION = 19;
 
 class DaylioScribe {
     // Data
@@ -49,17 +73,8 @@ class DaylioScribe {
     private lastVisibleEnd = -1;
     private scrollRAF: number | null = null;
 
-    // Default mood labels
-    private defaultMoodLabels: Record<number, string> = {
-        1: 'great',
-        2: 'good',
-        3: 'meh',
-        4: 'bad',
-        5: 'awful'
-    };
-
     // ZIP storage
-    private originalZip: any = null;
+    private archiveFiles: Record<string, Uint8Array> = {};
     private assets: Record<string, Uint8Array> = {};
 
     // DOM Elements
@@ -500,25 +515,11 @@ class DaylioScribe {
             const dropzoneP = this.dropzone.querySelector('p');
             if (dropzoneP) dropzoneP.textContent = 'Loading...';
 
-            this.originalZip = await JSZip.loadAsync(file);
-
-            this.assets = {};
-            const assetFiles = Object.keys(this.originalZip.files).filter(
-                (name: string) => name.startsWith('assets/') && !this.originalZip.files[name].dir
-            );
-
-            for (const assetPath of assetFiles) {
-                this.assets[assetPath] = await this.originalZip.files[assetPath].async('uint8array');
-            }
-
-            const backupFile = this.originalZip.file('backup.daylio');
-            if (!backupFile) {
-                throw new Error('backup.daylio not found in the archive');
-            }
-
-            const base64Content = await backupFile.async('string');
-            const jsonString = this.base64DecodeUtf8(base64Content.trim());
-            this.data = JSON.parse(jsonString);
+            const archive = await readDaylioArchive(JSZip, file);
+            this.archiveFiles = archive.preservedFiles;
+            this.assets = archive.assets;
+            this.assetMap = null;
+            this.data = archive.data;
 
             this.validateBackupStructure();
 
@@ -588,38 +589,15 @@ class DaylioScribe {
     }
 
     private buildMoodLabels(): void {
-        this.moods = {};
-        const customMoods = this.data?.customMoods || [];
-
-        for (const mood of customMoods) {
-            let label = mood.custom_name?.trim();
-            if (!label) {
-                label = this.defaultMoodLabels[mood.predefined_name_id] || `mood ${mood.id}`;
-            }
-
-            this.moods[mood.id] = {
-                label: label,
-                groupId: mood.mood_group_id
-            };
-        }
+        this.moods = createMoodLabels(this.data?.customMoods || []);
     }
 
     private buildTagLabels(): void {
-        this.tags = {};
-        const tags = this.data?.tags || [];
-
-        for (const tag of tags) {
-            this.tags[tag.id] = tag.name;
-        }
-    }
-
-    private getTagName(tagId: number): string {
-        return this.tags[tagId] || `activity ${tagId}`;
+        this.tags = createTagLabels(this.data?.tags || []);
     }
 
     private getEntryTags(entry: DayEntry): string[] {
-        if (!entry.tags || entry.tags.length === 0) return [];
-        return entry.tags.map(tagId => this.getTagName(tagId));
+        return resolveEntryTags(entry, this.tags);
     }
 
     private storeOriginalEntryStates(): void {
@@ -647,18 +625,18 @@ class DaylioScribe {
     }
 
     private getMoodLabel(moodId: number): string {
-        return this.moods[moodId]?.label || `mood ${moodId}`;
+        return resolveMoodLabel(this.moods, moodId);
     }
 
     private getMoodGroupId(moodId: number): number {
-        return this.moods[moodId]?.groupId || moodId;
+        return resolveMoodGroupId(this.moods, moodId);
     }
 
     private showApp(): void {
         this.dropzone.classList.add('hidden');
         this.app.classList.remove('hidden');
 
-        const withNotes = this.entries.filter(e => e.note && e.note.length > 0).length;
+        const withNotes = this.entries.filter(e => entryHasNote(e, html => this.htmlToPlainText(html))).length;
         this.entryCount.textContent = `${this.entries.length} entries`;
         this.notesCount.textContent = `${withNotes} with notes`;
 
@@ -683,28 +661,13 @@ class DaylioScribe {
     }
 
     private applyFilters(): void {
-        let filtered = [...this.entries];
-
-        if (this.filterNotes.checked) {
-            filtered = filtered.filter(e => e.note && e.note.length > 0);
-        }
-
         const dateRange = this.getDateRange();
-        if (dateRange) {
-            filtered = filtered.filter(e => {
-                const entryDate = e.datetime;
-                return entryDate >= dateRange.from && entryDate <= dateRange.to;
-            });
-        }
-
-        const searchTerm = this.searchInput.value.toLowerCase().trim();
-        if (searchTerm) {
-            filtered = filtered.filter(e => {
-                const noteText = this.htmlToPlainText(e.note || '').toLowerCase();
-                const titleText = (e.note_title || '').toLowerCase();
-                return noteText.includes(searchTerm) || titleText.includes(searchTerm);
-            });
-        }
+        const filtered = filterEntries(this.entries, {
+            notesOnly: this.filterNotes.checked,
+            dateRange,
+            searchTerm: this.searchInput.value,
+            textExtractor: html => this.htmlToPlainText(html)
+        });
 
         filtered.sort((a, b) => b.datetime - a.datetime);
 
@@ -713,53 +676,12 @@ class DaylioScribe {
     }
 
     private getDateRange(): DateRange | null {
-        const selection = this.dateRangeSelect.value;
-        const now = new Date();
-        let from: Date, to: Date;
-
-        switch (selection) {
-            case 'all':
-                return null;
-
-            case 'thisMonth':
-                from = new Date(now.getFullYear(), now.getMonth(), 1);
-                to = new Date(now.getFullYear(), now.getMonth() + 1, 0, 23, 59, 59, 999);
-                break;
-
-            case 'last30':
-                from = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000);
-                to = now;
-                break;
-
-            case 'last3Months':
-                from = new Date(now.getFullYear(), now.getMonth() - 2, 1);
-                to = now;
-                break;
-
-            case 'thisYear':
-                from = new Date(now.getFullYear(), 0, 1);
-                to = new Date(now.getFullYear(), 11, 31, 23, 59, 59, 999);
-                break;
-
-            case 'lastYear':
-                from = new Date(now.getFullYear() - 1, 0, 1);
-                to = new Date(now.getFullYear() - 1, 11, 31, 23, 59, 59, 999);
-                break;
-
-            case 'custom': {
-                const fromVal = this.dateFrom.value;
-                const toVal = this.dateTo.value;
-                if (!fromVal && !toVal) return null;
-                from = fromVal ? new Date(fromVal + 'T00:00:00') : new Date(0);
-                to = toVal ? new Date(toVal + 'T23:59:59.999') : now;
-                break;
-            }
-
-            default:
-                return null;
-        }
-
-        return { from: from.getTime(), to: to.getTime() };
+        return resolveDateRange(
+            this.dateRangeSelect.value,
+            new Date(),
+            this.dateFrom.value,
+            this.dateTo.value
+        );
     }
 
     private renderCalendar(): void {
@@ -1043,6 +965,19 @@ class DaylioScribe {
         const searchTerm = this.searchInput.value.trim();
         const fragment = document.createDocumentFragment();
 
+        if (totalItems === 0) {
+            const emptyState = document.createElement('div');
+            emptyState.className = 'empty-state';
+            emptyState.setAttribute('role', 'status');
+            emptyState.textContent = this.entries.length === 0
+                ? 'No entries found in this backup.'
+                : 'No entries match the current filters.';
+
+            this.entriesList.innerHTML = '';
+            this.entriesList.appendChild(emptyState);
+            return;
+        }
+
         if (bufferedStart > 0) {
             const topSpacer = document.createElement('div');
             topSpacer.className = 'virtual-spacer';
@@ -1279,9 +1214,14 @@ class DaylioScribe {
             });
         }
 
+        let missingPhotoCount = 0;
+
         entryAssetIds.forEach((assetId, index) => {
             const asset = this.assetMap![assetId];
-            if (!asset) return;
+            if (!asset) {
+                missingPhotoCount++;
+                return;
+            }
 
             const createdAt = new Date(asset.createdAt);
             const year = createdAt.getFullYear();
@@ -1292,18 +1232,34 @@ class DaylioScribe {
             if (assetData) {
                 const url = this.createImageUrl(assetData);
                 this.currentEntryPhotos.push(url);
+                const photoIndex = this.currentEntryPhotos.length - 1;
 
-                const thumb = document.createElement('div');
+                const thumb = document.createElement('button');
+                thumb.type = 'button';
                 thumb.className = 'photo-thumbnail';
-                thumb.innerHTML = `<img src="${url}" alt="Photo ${index + 1}">`;
-                thumb.addEventListener('click', () => this.openLightbox(this.currentEntryPhotos.length - 1));
+                thumb.setAttribute('aria-label', `Open photo ${this.currentEntryPhotos.length}`);
+                thumb.innerHTML = `<img src="${url}" alt="Daylio photo ${index + 1}">`;
+                thumb.addEventListener('click', () => this.openLightbox(photoIndex));
                 this.photoThumbnails.appendChild(thumb);
+            } else {
+                missingPhotoCount++;
             }
         });
+
+        if (missingPhotoCount > 0) {
+            const warning = document.createElement('p');
+            warning.className = 'photo-warning';
+            warning.setAttribute('role', 'status');
+            warning.textContent = `${missingPhotoCount} referenced ${missingPhotoCount === 1 ? 'photo is' : 'photos are'} missing from this backup.`;
+            this.photoThumbnails.appendChild(warning);
+        }
 
         if (this.currentEntryPhotos.length > 0) {
             this.photoSection.classList.remove('hidden');
             this.photoCount.textContent = String(this.currentEntryPhotos.length);
+        } else if (missingPhotoCount > 0) {
+            this.photoSection.classList.remove('hidden');
+            this.photoCount.textContent = '0';
         } else {
             this.photoSection.classList.add('hidden');
         }
@@ -1317,7 +1273,7 @@ class DaylioScribe {
             mimeType = 'image/gif';
         }
 
-        const blob = new Blob([data], { type: mimeType });
+        const blob = new Blob([data as unknown as BlobPart], { type: mimeType });
         return URL.createObjectURL(blob);
     }
 
@@ -1446,37 +1402,11 @@ class DaylioScribe {
         // Start with all entries
         let filtered = [...this.entries];
 
-        // Apply date range filter
-        if (dateRange !== 'all') {
-            const now = new Date();
-            let startDate: Date;
-            let endDate: Date = now;
-
-            switch (dateRange) {
-                case 'thisMonth':
-                    startDate = new Date(now.getFullYear(), now.getMonth(), 1);
-                    break;
-                case 'last30':
-                    startDate = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000);
-                    break;
-                case 'last3Months':
-                    startDate = new Date(now.getFullYear(), now.getMonth() - 3, now.getDate());
-                    break;
-                case 'thisYear':
-                    startDate = new Date(now.getFullYear(), 0, 1);
-                    break;
-                case 'lastYear':
-                    startDate = new Date(now.getFullYear() - 1, 0, 1);
-                    endDate = new Date(now.getFullYear() - 1, 11, 31, 23, 59, 59);
-                    break;
-                default:
-                    startDate = new Date(0);
-            }
-
-            filtered = filtered.filter(entry => {
-                const entryDate = new Date(entry.datetime);
-                return entryDate >= startDate && entryDate <= endDate;
-            });
+        const range = resolveDateRange(dateRange);
+        if (range) {
+            filtered = filtered.filter(entry =>
+                entry.datetime >= range.from && entry.datetime <= range.to
+            );
         }
 
         // Apply activity filter
@@ -1529,7 +1459,7 @@ class DaylioScribe {
             // Convert to blob and download
             canvas.toBlob((blob) => {
                 if (!blob) {
-                    this.showToast('Failed to generate image', 'error');
+                    this.showToast('error', 'Failed to Export Insights', 'Could not generate the image.');
                     return;
                 }
 
@@ -1550,11 +1480,11 @@ class DaylioScribe {
                 document.body.removeChild(link);
                 URL.revokeObjectURL(url);
 
-                this.showToast('Insights exported successfully', 'success');
+                this.showToast('success', 'Insights Exported', 'Saved the insights dashboard as an image.');
             }, 'image/png');
         } catch (error) {
             console.error('Export failed:', error);
-            this.showToast('Failed to export insights', 'error');
+            this.showToast('error', 'Failed to Export Insights', (error as Error).message);
         } finally {
             // Restore button state
             this.exportInsightsBtn.textContent = originalText;
@@ -2061,9 +1991,10 @@ class DaylioScribe {
     }
 
     private updateCurrentEntry(): void {
-        if (this.currentEntryIndex === null) return;
+        if (this.currentEntryIndex === null || this.currentEntryIndex < 0) return;
 
         const entry = this.entries[this.currentEntryIndex];
+        if (!entry) return;
         entry.note_title = this.noteTitleInput.value;
 
         const quillHtml = this.quill.root.innerHTML;
@@ -2082,12 +2013,13 @@ class DaylioScribe {
     }
 
     private revertEntry(): void {
-        if (this.currentEntryIndex === null) return;
+        if (this.currentEntryIndex === null || this.currentEntryIndex < 0) return;
 
         const original = this.originalEntryStates.get(this.currentEntryIndex);
         if (!original) return;
 
         const entry = this.entries[this.currentEntryIndex];
+        if (!entry) return;
 
         // Restore original values
         entry.note = original.note;
@@ -2144,173 +2076,17 @@ class DaylioScribe {
         this.saveBtn.textContent = 'Download Backup';
     }
 
-    // HTML conversion methods (duplicated from conversions.ts for class use)
+    // HTML conversion methods
     private daylioToQuillHtml(html: string): string {
-        if (!html) return '';
-
-        let result = html;
-        result = result.replace(/<span[^>]*>/gi, '');
-        result = result.replace(/<\/span>/gi, '');
-        result = result.replace(/<p[^>]*>/gi, '<p>');
-        result = result.replace(/<li([^>]*)>/gi, (_match: string, attrs: string) => {
-            const dataListMatch = attrs.match(/data-list="([^"]*)"/);
-            if (dataListMatch) {
-                return `<li data-list="${dataListMatch[1]}">`;
-            }
-            return '<li>';
-        });
-        result = result.replace(/<div><br\s*\/?><\/div>/gi, '<p><br></p>');
-        result = result.replace(/<div>/gi, '<p>');
-        result = result.replace(/<\/div>/gi, '</p>');
-        result = result.replace(/\\n/g, '<br>');
-        result = result.replace(/<b>/gi, '<strong>');
-        result = result.replace(/<\/b>/gi, '</strong>');
-        result = result.replace(/<i>/gi, '<em>');
-        result = result.replace(/<\/i>/gi, '</em>');
-        result = result.replace(/<strike>/gi, '<s>');
-        result = result.replace(/<\/strike>/gi, '</s>');
-        result = result.replace(/<font[^>]*>/gi, '');
-        result = result.replace(/<\/font>/gi, '');
-        result = this.convertBrToQuillParagraphs(result);
-        result = result.replace(/^(<p><br><\/p>)+/, '');
-        result = this.addQuillListAttributes(result);
-
-        return result;
-    }
-
-    private convertBrToQuillParagraphs(html: string): string {
-        if (!html) return html;
-
-        let result = html;
-        const BLANK_LINE_PLACEHOLDER = '___BLANK_LINE_PLACEHOLDER___';
-        result = result.replace(/<p><br\s*\/?><\/p>/gi, BLANK_LINE_PLACEHOLDER);
-        const BR_PLACEHOLDER = '___BR_PLACEHOLDER___';
-        result = result.replace(/<br\s*\/?>\s*<br\s*\/?>/gi, `</p><p>${BR_PLACEHOLDER}</p><p>`);
-        result = result.replace(/<br\s*\/?>/gi, '</p><p>');
-        result = result.replace(new RegExp(BR_PLACEHOLDER, 'g'), '<br>');
-        result = result.replace(new RegExp(BLANK_LINE_PLACEHOLDER, 'g'), '<p><br></p>');
-
-        if (result && !result.startsWith('<')) {
-            const firstTagMatch = result.match(/<[^>]+>/);
-            if (firstTagMatch) {
-                const firstTagIndex = result.indexOf(firstTagMatch[0]);
-                const leadingText = result.substring(0, firstTagIndex);
-                const rest = result.substring(firstTagIndex);
-                if (leadingText.trim()) {
-                    result = `<p>${leadingText}</p>${rest}`;
-                }
-            } else {
-                result = `<p>${result}</p>`;
-            }
-        }
-
-        result = result.replace(/<\/p>\s*<\/p>/gi, '</p>');
-        result = result.replace(/<p>\s*<p>/gi, '<p>');
-        result = result.replace(/<p><\/p>/g, '');
-
-        return result;
-    }
-
-    private addQuillListAttributes(html: string): string {
-        if (!html) return html;
-
-        const parser = new DOMParser();
-        const doc = parser.parseFromString('<div>' + html + '</div>', 'text/html');
-        const container = doc.body.firstChild as HTMLElement;
-
-        container.querySelectorAll('ol > li').forEach(li => {
-            if (!li.getAttribute('data-list')) {
-                li.setAttribute('data-list', 'ordered');
-            }
-        });
-
-        container.querySelectorAll('ul > li').forEach(li => {
-            if (!li.getAttribute('data-list')) {
-                li.setAttribute('data-list', 'bullet');
-            }
-        });
-
-        return container.innerHTML;
+        return convertDaylioToQuillHtml(html);
     }
 
     private quillToDaylioHtml(html: string): string {
-        if (!html || html === '<p><br></p>') return '';
-
-        let result = html;
-        result = result.replace(/<span class="ql-ui"[^>]*>.*?<\/span>/gi, '');
-        result = result.replace(/<ol>(\s*<li data-list="bullet">)/gi, '<ul><li>');
-        result = result.replace(/<li data-list="bullet">/gi, '<li>');
-        result = result.replace(/<\/li>(\s*)<\/ol>/gi, (match: string, space: string, offset: number) => {
-            const before = result.substring(0, offset);
-            if (before.lastIndexOf('<ul>') > before.lastIndexOf('<ol>')) {
-                return '</li>' + space + '</ul>';
-            }
-            return match;
-        });
-        result = this.convertQuillLists(result);
-        result = result.replace(/<strong>/gi, '<b>');
-        result = result.replace(/<\/strong>/gi, '</b>');
-        result = result.replace(/<em>/gi, '<i>');
-        result = result.replace(/<\/em>/gi, '</i>');
-        result = result.replace(/<p>/gi, '<div>');
-        result = result.replace(/<\/p>/gi, '</div>');
-        result = result.replace(/<div><\/div>/gi, '<div><br></div>');
-        result = result.replace(/(<div><br><\/div>)+$/, '');
-        result = result.trim();
-
-        return result;
-    }
-
-    private convertQuillLists(html: string): string {
-        const parser = new DOMParser();
-        const doc = parser.parseFromString('<div>' + html + '</div>', 'text/html');
-        const container = doc.body.firstChild as HTMLElement;
-
-        const ols = container.querySelectorAll('ol');
-        ols.forEach(ol => {
-            const items = ol.querySelectorAll('li');
-            if (items.length > 0) {
-                const firstItem = items[0];
-                const listType = firstItem.getAttribute('data-list');
-
-                if (listType === 'bullet') {
-                    const ul = doc.createElement('ul');
-                    items.forEach(li => {
-                        li.removeAttribute('data-list');
-                        ul.appendChild(li.cloneNode(true));
-                    });
-                    ol.parentNode?.replaceChild(ul, ol);
-                } else {
-                    items.forEach(li => {
-                        li.setAttribute('data-list', 'ordered');
-                    });
-                }
-            }
-        });
-
-        return container.innerHTML;
+        return convertQuillToDaylioHtml(html);
     }
 
     private htmlToPlainText(html: string): string {
-        if (!html) return '';
-
-        let text = html;
-        text = text.replace(/<br\s*\/?>/gi, '\n');
-        text = text.replace(/<\/div>\s*<div>/gi, '\n');
-        text = text.replace(/<\/(div|p|li)>/gi, '\n');
-        text = text.replace(/<li[^>]*>/gi, '• ');
-        text = text.replace(/<[^>]+>/g, '');
-        text = text.replace(/&nbsp;/g, ' ');
-        text = text.replace(/&amp;/g, '&');
-        text = text.replace(/&lt;/g, '<');
-        text = text.replace(/&gt;/g, '>');
-        text = text.replace(/&quot;/g, '"');
-        text = text.replace(/&#39;/g, "'");
-        text = text.replace(/\\n/g, '\n');
-        text = text.replace(/\n{3,}/g, '\n\n');
-        text = text.trim();
-
-        return text;
+        return convertHtmlToPlainText(html);
     }
 
     private showToast(type: ToastType, title: string, message = '', duration = 5000): HTMLElement {
@@ -2356,63 +2132,11 @@ class DaylioScribe {
     }
 
     private escapeHtml(text: string): string {
-        const div = document.createElement('div');
-        div.textContent = text;
-        return div.innerHTML;
+        return escapeHtmlText(text);
     }
 
     private highlightText(text: string, searchTerm: string): string {
-        if (!searchTerm || !text) return this.escapeHtml(text);
-
-        const escaped = this.escapeHtml(text);
-        const escapedTerm = this.escapeHtml(searchTerm);
-
-        const regexSafe = escapedTerm.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-        const regex = new RegExp(`(${regexSafe})`, 'gi');
-
-        return escaped.replace(regex, '<mark>$1</mark>');
-    }
-
-    private base64DecodeUtf8(base64: string): string {
-        const binaryString = atob(base64);
-        const bytes = new Uint8Array(binaryString.length);
-        for (let i = 0; i < binaryString.length; i++) {
-            bytes[i] = binaryString.charCodeAt(i);
-        }
-        return new TextDecoder('utf-8').decode(bytes);
-    }
-
-    private base64EncodeUtf8(str: string): string {
-        const bytes = new TextEncoder().encode(str);
-        let binaryString = '';
-        for (let i = 0; i < bytes.length; i++) {
-            binaryString += String.fromCharCode(bytes[i]);
-        }
-        return btoa(binaryString);
-    }
-
-    private arrayBufferToBase64(buffer: ArrayBuffer): string {
-        const bytes = new Uint8Array(buffer);
-        let binaryString = '';
-        for (let i = 0; i < bytes.length; i++) {
-            binaryString += String.fromCharCode(bytes[i]);
-        }
-        return btoa(binaryString);
-    }
-
-    /** Convert emojis to text representation for PDF export (fonts don't support emojis) */
-    private emojisToText(text: string): string {
-        const segmenter = new Intl.Segmenter('en', { granularity: 'grapheme' });
-        let result = '';
-        for (const { segment } of segmenter.segment(text)) {
-            const name = EMOJI_MAP[segment] || EMOJI_MAP[segment.replace(/\uFE0F/g, '')];
-            if (name) {
-                result += name;
-            } else {
-                result += segment;
-            }
-        }
-        return result;
+        return highlightPlainText(text, searchTerm);
     }
 
     private async saveBackup(): Promise<void> {
@@ -2421,20 +2145,10 @@ class DaylioScribe {
         try {
             this.data.dayEntries = this.entries;
 
-            const jsonString = JSON.stringify(this.data);
-            const base64Content = this.base64EncodeUtf8(jsonString);
-
-            const zip = new JSZip();
-            zip.file('backup.daylio', base64Content);
-
-            for (const [path, content] of Object.entries(this.assets)) {
-                zip.file(path, content);
-            }
-
-            const blob = await zip.generateAsync({
+            const blob = await createDaylioArchive(JSZip, this.data, this.archiveFiles, {
                 type: 'blob',
                 compression: 'STORE'
-            });
+            }) as Blob;
 
             const url = URL.createObjectURL(blob);
             const a = document.createElement('a');
@@ -2478,38 +2192,7 @@ class DaylioScribe {
                 return;
             }
 
-            const headers = ['Date', 'Weekday', 'Time', 'Mood', 'Mood Score', 'Activities', 'Activity Count', 'Photos', 'Title', 'Note'];
-            const rows: string[][] = [headers];
-
-            const weekdays = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
-
-            const sortedEntries = [...this.entries].sort((a, b) => {
-                const dateA = new Date(a.year, a.month, a.day, a.hour, a.minute);
-                const dateB = new Date(b.year, b.month, b.day, b.hour, b.minute);
-                return dateA.getTime() - dateB.getTime();
-            });
-
-            for (const entry of sortedEntries) {
-                const date = `${entry.year}-${String(entry.month + 1).padStart(2, '0')}-${String(entry.day).padStart(2, '0')}`;
-                const weekday = weekdays[new Date(entry.year, entry.month, entry.day).getDay()];
-                const time = `${String(entry.hour).padStart(2, '0')}:${String(entry.minute).padStart(2, '0')}`;
-                const mood = this.getMoodLabel(entry.mood);
-                const moodGroupId = this.getMoodGroupId(entry.mood);
-                const moodScore = String(6 - moodGroupId); // Convert to 1-5 scale where 5=great, 1=awful
-                const activityNames = this.getEntryTags(entry);
-                const activities = activityNames.join(' | ');
-                const activityCount = String(activityNames.length);
-                const photoCount = String(entry.assets?.length || 0);
-                const title = entry.note_title || '';
-                const note = this.htmlToPlainText(entry.note || '');
-
-                rows.push([date, weekday, time, mood, moodScore, activities, activityCount, photoCount, title, note]);
-            }
-
-            const csv = rows.map(row =>
-                row.map(cell => this.escapeCsvField(cell)).join(',')
-            ).join('\n');
-
+            const csv = buildCsvExport(this.entries, this.moods, this.tags);
             const bom = '\uFEFF';
             const blob = new Blob([bom + csv], { type: 'text/csv;charset=utf-8' });
 
@@ -2533,18 +2216,6 @@ class DaylioScribe {
         }
     }
 
-    private escapeCsvField(field: unknown): string {
-        if (field === null || field === undefined) return '';
-
-        const str = String(field);
-
-        if (str.includes(',') || str.includes('"') || str.includes('\n') || str.includes('\r')) {
-            return '"' + str.replace(/"/g, '""') + '"';
-        }
-
-        return str;
-    }
-
     private exportJson(): void {
         try {
             if (!this.data) {
@@ -2552,7 +2223,7 @@ class DaylioScribe {
                 return;
             }
 
-            const jsonString = JSON.stringify(this.data, null, 2);
+            const jsonString = buildJsonExport(this.data);
             const blob = new Blob([jsonString], { type: 'application/json;charset=utf-8' });
 
             const url = URL.createObjectURL(blob);
@@ -2582,78 +2253,7 @@ class DaylioScribe {
                 return;
             }
 
-            const lines: string[] = [];
-            lines.push('# Daylio Journal Export');
-            lines.push('');
-
-            const sortedEntries = [...this.entries].sort((a, b) => b.datetime - a.datetime);
-
-            let currentYear = -1;
-            let currentMonth = -1;
-            const months = ['January', 'February', 'March', 'April', 'May', 'June',
-                           'July', 'August', 'September', 'October', 'November', 'December'];
-
-            for (const entry of sortedEntries) {
-                // Add year header if changed
-                if (entry.year !== currentYear) {
-                    currentYear = entry.year;
-                    currentMonth = -1;
-                    lines.push(`## ${currentYear}`);
-                    lines.push('');
-                }
-
-                // Add month header if changed
-                if (entry.month !== currentMonth) {
-                    currentMonth = entry.month;
-                    lines.push(`### ${months[currentMonth]}`);
-                    lines.push('');
-                }
-
-                // Entry header
-                const weekdays = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
-                const date = new Date(entry.year, entry.month, entry.day);
-                const weekday = weekdays[date.getDay()];
-                const time = `${String(entry.hour).padStart(2, '0')}:${String(entry.minute).padStart(2, '0')}`;
-                const mood = this.getMoodLabel(entry.mood);
-
-                lines.push(`#### ${months[entry.month]} ${entry.day}, ${weekday} at ${time}`);
-                lines.push('');
-                lines.push(`**Mood:** ${mood}`);
-
-                // Activities
-                const activities = this.getEntryTags(entry);
-                if (activities.length > 0) {
-                    lines.push(`**Activities:** ${activities.join(', ')}`);
-                }
-
-                // Photos count
-                const photoCount = entry.assets?.length || 0;
-                if (photoCount > 0) {
-                    lines.push(`**Photos:** ${photoCount}`);
-                }
-
-                lines.push('');
-
-                // Title
-                if (entry.note_title?.trim()) {
-                    lines.push(`**${entry.note_title.trim()}**`);
-                    lines.push('');
-                }
-
-                // Note content
-                if (entry.note) {
-                    const plainText = this.htmlToPlainText(entry.note);
-                    if (plainText) {
-                        lines.push(plainText);
-                        lines.push('');
-                    }
-                }
-
-                lines.push('---');
-                lines.push('');
-            }
-
-            const markdown = lines.join('\n');
+            const markdown = buildMarkdownExport(this.entries, this.moods, this.tags);
             const blob = new Blob([markdown], { type: 'text/markdown;charset=utf-8' });
 
             const url = URL.createObjectURL(blob);
@@ -2683,94 +2283,7 @@ class DaylioScribe {
                 return;
             }
 
-            const sortedEntries = [...this.entries].sort((a, b) => b.datetime - a.datetime);
-            const months = ['January', 'February', 'March', 'April', 'May', 'June',
-                           'July', 'August', 'September', 'October', 'November', 'December'];
-            const weekdays = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
-
-            // Build document content
-            const content: any[] = [];
-
-            // Title
-            content.push({ text: 'Daylio Journal', style: 'title' });
-            content.push({ text: `Exported on ${new Date().toLocaleDateString()}`, style: 'subtitle', margin: [0, 0, 0, 15] });
-
-            let currentYear = -1;
-            let currentMonth = -1;
-
-            for (const entry of sortedEntries) {
-                // Year header
-                if (entry.year !== currentYear) {
-                    currentYear = entry.year;
-                    currentMonth = -1;
-                    content.push({ text: String(currentYear), style: 'yearHeader', margin: [0, 10, 0, 5] });
-                }
-
-                // Month header
-                if (entry.month !== currentMonth) {
-                    currentMonth = entry.month;
-                    content.push({ text: months[currentMonth], style: 'monthHeader', margin: [0, 5, 0, 5] });
-                }
-
-                // Entry date and mood
-                const date = new Date(entry.year, entry.month, entry.day);
-                const weekday = weekdays[date.getDay()];
-                const time = `${String(entry.hour).padStart(2, '0')}:${String(entry.minute).padStart(2, '0')}`;
-                const mood = this.emojisToText(this.getMoodLabel(entry.mood));
-
-                content.push({
-                    columns: [
-                        { text: `${months[entry.month]} ${entry.day}, ${weekday}`, style: 'entryDate', width: 'auto' },
-                        { text: `${time} • ${mood}`, style: 'entryMeta', width: '*', margin: [10, 0, 0, 0] }
-                    ],
-                    margin: [0, 3, 0, 2]
-                });
-
-                // Activities (convert emojis to text for PDF compatibility)
-                const activities = this.getEntryTags(entry);
-                if (activities.length > 0) {
-                    content.push({ text: this.emojisToText(activities.join(', ')), style: 'activities', margin: [0, 0, 0, 2] });
-                }
-
-                // Title (convert emojis to text for PDF compatibility)
-                if (entry.note_title?.trim()) {
-                    content.push({ text: this.emojisToText(entry.note_title.trim()), style: 'noteTitle', margin: [0, 2, 0, 2] });
-                }
-
-                // Note content (convert emojis to text for PDF compatibility)
-                if (entry.note) {
-                    const plainText = this.htmlToPlainText(entry.note);
-                    if (plainText) {
-                        content.push({ text: this.emojisToText(plainText), style: 'noteContent', margin: [0, 0, 0, 3] });
-                    }
-                }
-
-                // Separator line
-                content.push({
-                    canvas: [{ type: 'line', x1: 0, y1: 0, x2: 515, y2: 0, lineWidth: 0.5, lineColor: '#cccccc' }],
-                    margin: [0, 5, 0, 5]
-                });
-            }
-
-            // Document definition
-            const docDefinition = {
-                content,
-                styles: {
-                    title: { fontSize: 24, bold: true },
-                    subtitle: { fontSize: 10, color: '#666666' },
-                    yearHeader: { fontSize: 18, bold: true },
-                    monthHeader: { fontSize: 14, bold: true, color: '#505050' },
-                    entryDate: { fontSize: 11, bold: true },
-                    entryMeta: { fontSize: 11, color: '#666666' },
-                    activities: { fontSize: 9, color: '#505050' },
-                    noteTitle: { fontSize: 10, bold: true },
-                    noteContent: { fontSize: 9 }
-                },
-                defaultStyle: {
-                    font: 'Roboto'
-                },
-                pageMargins: [40, 40, 40, 40] as [number, number, number, number]
-            };
+            const docDefinition = buildPdfDocDefinition(this.entries, this.moods, this.tags);
 
             // Generate and download PDF
             const now = new Date();

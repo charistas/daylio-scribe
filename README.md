@@ -44,6 +44,26 @@ The app reads mood definitions from your backup:
 - Supports any number of mood levels
 - Color-coded mood badges for quick reference
 
+## Round-Trip Scope
+
+Daylio Scribe preserves the original local-first workflow: `.daylio` files are decoded, edited, and repackaged in the browser without uploading data. The repackaged backup keeps `backup.daylio`, photo assets, and unknown non-directory files from the source archive so edited backups remain download-ready for import.
+
+Covered by local tests:
+- UTF-8 backup encoding for Greek text and emoji
+- Rich note HTML conversion for bold, italic, underline, strikethrough, bullet lists, and ordered lists
+- Custom mood labels and fallback mood labels
+- Activities/tags with Greek names and emoji
+- Photo attachment bytes and unknown archive files during `.daylio` repackaging
+- Date filters, note-only filters, and Greek search terms
+- CSV, JSON, Markdown, and PDF export builders
+
+Known unsupported Daylio edge cases:
+- Backup versions newer than the tested format version (v19) are allowed only after an explicit warning; structural changes in newer Daylio backups may still be unsupported.
+- Editing is limited to note title and note body. Other Daylio data such as moods, activities, goals, templates, and attachment metadata is preserved but not editable.
+- Attachments are preserved and previewed when the referenced asset file is present. Missing or renamed asset files are reported in the UI but cannot be repaired automatically.
+- Embedded media types other than image assets may be preserved in the archive but are not previewed or edited.
+- Daylio-specific rich text features outside the supported HTML subset may be preserved as raw HTML or normalized by the editor.
+
 ## License
 
 Copyright (c) 2025 charistas. All rights reserved.

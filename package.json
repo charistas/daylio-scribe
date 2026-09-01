@@ -7,7 +7,7 @@
     "emoji-picker-element": "^1.21.0",
     "html2canvas": "^1.4.1",
     "jszip": "3.10.1",
-    "quill": "2.0.3"
+    "quill": "2.0.2"
   },
   "scripts": {
     "build": "esbuild js/app.ts --bundle --format=iife --outfile=dist/app.js --sourcemap",

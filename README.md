@@ -1,6 +1,7 @@
 # Daylio Scribe
 
-[![Tests](https://github.com/charistas/daylio-scribe/actions/workflows/test.yml/badge.svg)](https://github.com/charistas/daylio-scribe/actions/workflows/test.yml)
+> **Unmaintained — 14 November 2026**
+> This project is retired. No further updates, security fixes, or support are planned, and the public GitHub Pages app has been taken offline. The source and bundled files are preserved for reference under the existing license. Historical local-use instructions remain below; use unsupported software at your own risk.
 
 A local web app for editing Daylio journal notes with a human-friendly interface.
 
@@ -30,7 +31,7 @@ A local web app for editing Daylio journal notes with a human-friendly interface
 ## How to Use
 
 1. Export a backup from the Daylio app
-2. Open `index.html` in your browser (or visit the [live app](https://charistas.github.io/daylio-scribe/))
+2. Open the preserved `index.html` in your browser; the former public app is offline
 3. Drag and drop your `.daylio` file onto the page
 4. Browse and edit your notes
 5. Click "Download Backup"
